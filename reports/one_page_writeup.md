@@ -1,6 +1,7 @@
 # Kava Social Chess Attendance Predictor
 
 **Harold Gonzalez · Distributed Systems for Data Science · NCF · Spring 2026**
+**Live app:** https://kava-social-attendance-predictor-cwlaxs6ygbxud7z48884zq.streamlit.app/ · **Repo:** github.com/Ruptzy/kava-social-attendance-predictor
 
 ## What it predicts
 Unique-player attendance for a future Kava Social chess bracket night in Bradenton, FL. Two heads share one feature row: a **regressor** for `attendance_count` and a **classifier** for `high_turnout` (1 if attendance ≥ historical median). The model is built to plan boards, clocks, and staffing — not to forecast game outcomes.

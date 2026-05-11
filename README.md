@@ -13,7 +13,7 @@ small, honest tool for the people who run the bracket to plan boards,
 clocks, and staffing.
 
 - **Author:** Harold Gonzalez
-- **Live app:** `<paste your Streamlit Community Cloud URL here once deployed>`
+- **Live app:** https://kava-social-attendance-predictor-cwlaxs6ygbxud7z48884zq.streamlit.app/
 - **Predicts:** unique-player attendance for an upcoming Kava Social chess bracket night
 
 ---
