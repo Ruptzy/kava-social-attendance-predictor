@@ -290,21 +290,40 @@ def _monthly_heatmap(history: pd.DataFrame):
 
 
 def _predicted_vs_actual(history: pd.DataFrame):
-    """Backfill predictions for the last N events using a 1-event holdout
-    rolling window (no leakage) - quick visual sanity check."""
-    fig = px.scatter(
-        history,
-        x="event_date",
-        y="attendance_count",
-        trendline="lowess",
-        labels={"event_date": "Event date", "attendance_count": "Attendance"},
+    """Scatter of actual attendance with a manually smoothed centered
+    rolling-mean trend line. Avoids statsmodels (which has scipy ABI
+    breakage on recent versions) for a self-contained chart."""
+    h = history.sort_values("event_date").copy()
+    h["smoothed"] = (
+        h["attendance_count"].rolling(window=7, center=True, min_periods=1).mean()
     )
-    fig.update_traces(marker=dict(color=KAVA_DARK, size=8, opacity=0.7))
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=h["event_date"],
+            y=h["attendance_count"],
+            mode="markers",
+            name="Attendance",
+            marker=dict(color=KAVA_DARK, size=8, opacity=0.7),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=h["event_date"],
+            y=h["smoothed"],
+            mode="lines",
+            name="Smoothed (rolling 7)",
+            line=dict(color=KAVA_AMBER, width=3),
+        )
+    )
     fig.update_layout(
         title="Historical attendance with smoothed trend",
         height=320,
         margin=dict(l=20, r=20, t=50, b=20),
         plot_bgcolor="white",
+        xaxis_title="Event date",
+        yaxis_title="Attendance",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     fig.update_xaxes(showgrid=False)
     fig.update_yaxes(gridcolor="#eef2f7")
