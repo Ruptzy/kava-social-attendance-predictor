@@ -1312,7 +1312,10 @@ def _two_bucket_box(
 
 
 def _rain_compare_chart(history: pd.DataFrame) -> go.Figure | None:
-    return _two_bucket_box(history, "rain_indicator", "Rainy night", "Dry night")
+    # The labels match the underlying definition: rain_indicator now means
+    # "meaningful precipitation between 7 PM and 11 PM" (~0.5 mm threshold),
+    # not "any trace of rain anytime during the day".
+    return _two_bucket_box(history, "rain_indicator", "Rain near 8 PM", "Dry near 8 PM")
 
 
 def _holiday_compare_chart(history: pd.DataFrame) -> go.Figure | None:
@@ -1607,30 +1610,49 @@ def _tab_calendar(history: pd.DataFrame) -> None:
 def _tab_weather(history: pd.DataFrame) -> None:
     _explain(
         "<b>Kava Social is a physical venue and bracket nights tip off at "
-        f"{EVENT_START_TIME}.</b> Florida weather &mdash; especially rain, storms, "
-        "and unusual heat or cold &mdash; can change whether people leave the "
-        "house to come play. The weather features used by the model describe the "
-        "<i>day</i> of the bracket night (Bradenton, FL); the live forecast is "
-        "pulled from Open-Meteo at request time."
+        f"{EVENT_START_TIME}.</b> Florida afternoons get plenty of brief showers, "
+        "but a 10-minute thunderstorm at noon shouldn't make a clear evening "
+        "feel rainy. So a night is counted as rainy only when meaningful "
+        "precipitation was actually recorded near the bracket window (7&nbsp;PM&nbsp;-&nbsp;11&nbsp;PM, "
+        "Bradenton, FL; about 0.5&nbsp;mm / 0.02&nbsp;in or more)."
     )
     rain_fig = _rain_compare_chart(history)
     temp_fig = _temp_vs_attendance_chart(history)
+    rain_caption = (
+        "Box plots show the spread of attendance for each bucket. "
+        "A night is counted as rainy only when meaningful precipitation was "
+        "recorded near the 8&nbsp;PM event window &mdash; passing afternoon showers "
+        "don't qualify."
+    )
     cols = st.columns(2 if temp_fig is not None and rain_fig is not None else 1)
     if rain_fig is not None and temp_fig is not None:
         with cols[0]:
-            _chart_panel("Rainy nights vs dry nights", rain_fig)
+            _chart_panel("Rain near 8 PM vs dry near 8 PM", rain_fig, rain_caption)
         with cols[1]:
             _chart_panel("Temperature vs attendance", temp_fig,
-                         "Each dot is one bracket night.")
+                         "Each dot is one bracket night. The dotted bronze line is the empirical trend.")
     else:
         if rain_fig is not None:
-            _chart_panel("Rainy nights vs dry nights", rain_fig)
+            _chart_panel("Rain near 8 PM vs dry near 8 PM", rain_fig, rain_caption)
         if temp_fig is not None:
             _chart_panel("Temperature vs attendance", temp_fig)
         if rain_fig is None and temp_fig is None:
             st.info("Weather data has not been merged into the event history yet. "
                     "Run `python src/weather.py` and then `python src/train_model.py` "
                     "to enable these charts.")
+
+    # Honest data-quality note
+    st.markdown(
+        '<div class="kc-trust" style="margin-top:0.6rem;">'
+        '<b>Data note.</b> Because bracket nights begin at '
+        f'{EVENT_START_TIME}, the model uses hourly Bradenton weather '
+        'aggregated over the 7&nbsp;PM&nbsp;-&nbsp;11&nbsp;PM event window when available '
+        '(Open-Meteo archive / 16-day forecast). For dates beyond the '
+        'forecast horizon the model falls back to daily aggregates and the '
+        'rain label is approximate.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _tab_community(history: pd.DataFrame) -> None:
