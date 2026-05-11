@@ -110,7 +110,10 @@ virtualenv is required. From the project root:
 # from the project root
 C:\python-uv\cpython-3.12.13-windows-x86_64-none\python.exe -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+# requirements.txt is the slim app-runtime set (used by Streamlit Cloud).
+# requirements-pipeline.txt adds pyspark, boto3, mlflow, reportlab, openpyxl
+# for running the local distributed pipeline.
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-pipeline.txt
 ```
 
 ### 2. Run the whole pipeline

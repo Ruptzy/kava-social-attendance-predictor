@@ -1,0 +1,22 @@
+# Full local pipeline dependencies - install these to run the bronze/silver/
+# gold transformations, the MLflow-tracked training, and the S3 upload.
+# These are NOT needed by the deployed Streamlit app, so they live in their
+# own file to keep `requirements.txt` slim for Streamlit Community Cloud.
+#
+# Install:
+#     pip install -r requirements.txt -r requirements-pipeline.txt
+
+# Distributed transformation
+pyspark==3.5.3
+
+# Cloud object storage
+boto3==1.35.65
+
+# Experiment tracking
+mlflow==2.18.0
+
+# One-page write-up PDF generator
+reportlab==4.2.5
+
+# Excel ingestion (xlsx_to_raw.py)
+openpyxl==3.1.5
