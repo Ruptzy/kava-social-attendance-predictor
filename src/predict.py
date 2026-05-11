@@ -230,13 +230,22 @@ def _events_in_year_prior(prior: pd.DataFrame, target: pd.Timestamp) -> int:
     return int((prior["event_date"].dt.year == target.year).sum())
 
 
-def predict_for_date(target_date) -> Prediction:
+def predict_for_date(target_date, weather_override: dict | None = None) -> Prediction:
+    """Predict attendance for `target_date`. Optional `weather_override` is a
+    dict that can supply any subset of the weather feature names (e.g.
+    temperature_high, rain_indicator, average_temperature, ...) — those keys
+    take precedence over the auto-fetched Open-Meteo values, the rest fall
+    back to forecast/history/medians as usual."""
     if isinstance(target_date, str):
         target_date = pd.to_datetime(target_date).date()
     elif isinstance(target_date, datetime):
         target_date = target_date.date()
     reg, clf, history, metadata = load_models()
     X = build_feature_row(target_date, history, metadata)
+    if weather_override:
+        for k, v in weather_override.items():
+            if k in X.columns and v is not None:
+                X.at[X.index[0], k] = v
 
     yhat_reg = float(reg.predict(X)[0])
     proba = float(clf.predict_proba(X)[0, 1])
