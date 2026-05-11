@@ -239,6 +239,12 @@ def main() -> None:
     X, y_reg, y_clf, dates, medians = prepare_xy(events)
 
     # ---- chronological holdout ----
+    # Because this is event forecasting data, the holdout set uses the most
+    # recent events instead of a random split. We sort the events by date in
+    # load_dataset(), then slice off the last HOLDOUT_N rows as the test set;
+    # the CV step below uses sklearn's TimeSeriesSplit which also never
+    # shuffles. A random shuffle would leak future information into past
+    # training folds and inflate the apparent accuracy.
     split = max(1, len(X) - HOLDOUT_N)
     X_train, y_train = X.iloc[:split], y_reg.iloc[:split]
     X_test, y_test = X.iloc[split:], y_reg.iloc[split:]

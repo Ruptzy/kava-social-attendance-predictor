@@ -1150,7 +1150,11 @@ def _tab_model(history: pd.DataFrame, reg, metadata: dict) -> None:
           <b>How accurate is the forecast?</b><br>
           On the most recent {metadata.get('holdout_n', 14)} bracket nights it hadn't seen during
           training, the {sel_label} model was usually off by about
-          <b>{holdout_mae:.1f} players</b>. {verdict}
+          <b>{holdout_mae:.1f} players</b>. {verdict}<br><br>
+          <b>Leakage check.</b> The model only uses information that would be known
+          <i>before</i> the event starts &mdash; calendar timing, weather forecast for that
+          date, and what happened on previous bracket nights. It never peeks at what
+          happens during the night it's predicting.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1162,7 +1166,10 @@ def _tab_model(history: pd.DataFrame, reg, metadata: dict) -> None:
         winner_name = metadata.get("selected_model_name")
         rows_html = [
             '<div class="kc-compare-row head">'
-            '<div>Model</div><div>Last-3-month MAE</div><div>RMSE</div><div>Notes</div>'
+            '<div>Model</div>'
+            '<div>Off by (test)</div>'
+            '<div>RMSE</div>'
+            '<div>Cross-validation</div>'
             '</div>'
         ]
         for c in comparison:
@@ -1176,7 +1183,8 @@ def _tab_model(history: pd.DataFrame, reg, metadata: dict) -> None:
                 f'<div class="blurb">{c.get("blurb", "")}</div></div>'
                 f'<div class="{mae_class}">{c["holdout_mae"]:.2f} players</div>'
                 f'<div class="num">{c["holdout_rmse"]:.2f}</div>'
-                f'<div class="num" style="color:var(--kc-silver-mute);font-size:0.78rem;">CV MAE {c["cv_mae"]:.2f}</div>'
+                f'<div class="num" style="color:var(--kc-silver-mute);font-size:0.78rem;">'
+                f'usually off by {c["cv_mae"]:.2f} on training folds</div>'
                 f'</div>'
             )
         st.markdown(

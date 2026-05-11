@@ -17,6 +17,8 @@ clocks, and staffing.
 - **Author:** Harold Gonzalez
 - **Live app:** https://kava-social-attendance-predictor-cwlaxs6ygbxud7z48884zq.streamlit.app/
 - **Predicts:** unique-player attendance for an upcoming Kava Social chess bracket night
+- **Does NOT predict:** chess games, winners, player strength, openings, or individual performance
+- **Data source:** historical Kava Social chess bracket / game logs, aggregated into event-level attendance
 
 ---
 
@@ -203,9 +205,16 @@ computed once over the gold table — see `models/metadata.json`.
 | **Random Forest** | **2.32 players** ✅ | Non-linear tree ensemble. **Selected.** |
 | Gradient Boosting | 2.51 players | Strong second place. |
 
-All runs are tracked in MLflow under `./mlruns/`. The classifier (for the
-"high turnout" label) is kept as a Random Forest. Exact values live in
-`models/metadata.json`.
+The selected Random Forest model improved over the naive baseline by about
+1.1 players on the chronological holdout set. All runs are tracked in MLflow
+under `./mlruns/`. The classifier (for the "high turnout" label) is kept as
+a Random Forest. Exact values live in `models/metadata.json`.
+
+**Anti-leakage.** The model only uses information that would be known *before*
+the event starts — calendar facts, weather forecast for that date, and what
+happened on previous bracket nights. No same-night counts are used as
+predictors. See `src/feature_engineering.py` for the `.shift(1)` operations
+that enforce this.
 
 ## Credentials
 
