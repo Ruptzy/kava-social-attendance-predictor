@@ -1597,13 +1597,79 @@ def _games_per_player_chart(history: pd.DataFrame) -> go.Figure | None:
     return fig
 
 
+# Map raw feature names to user-facing plain English labels. Anything not in
+# this dict falls back to a title-cased version of the column name.
+FEATURE_LABEL_MAP = {
+    # Recent attendance momentum
+    "previous_event_attendance": "Previous attendance",
+    "attendance_two_events_ago": "Attendance two nights ago",
+    "rolling_3_event_attendance": "Last-3-event average",
+    "rolling_5_event_attendance": "Last-5-event average",
+    "rolling_10_event_attendance": "Last-10-event average",
+    "attendance_trend_last_3": "Last-3-event direction",
+    "attendance_trend_last_5": "Recent attendance direction",
+    "previous_event_high_turnout": "Previous night was busy?",
+    # Community momentum
+    "previous_event_unique_players": "Previous unique players",
+    "previous_event_num_games": "Previous game count",
+    "previous_event_new_players_count": "Previous new players",
+    "previous_event_returning_players_count": "Previous returning players",
+    "previous_event_draw_rate": "Previous draw rate",
+    "previous_event_games_per_player": "Previous games per player",
+    "rolling_3_avg_num_games": "Recent game-count average",
+    "rolling_3_avg_new_players": "Recent new-player average",
+    "rolling_3_avg_returning_players": "Recent returning-player avg",
+    # Calendar timing
+    "month": "Month of year",
+    "day_of_month": "Day of the month",
+    "day_of_week": "Day of the week",
+    "is_sunday": "Sunday?",
+    "week_of_year": "Week of the year",
+    "is_beginning_of_month": "Early in the month?",
+    "is_end_of_month": "End of the month?",
+    "events_this_month_so_far": "Events this month so far",
+    "event_number_overall": "Event history pattern",
+    "event_number_in_year": "Event number this year",
+    "days_since_last_event": "Days since last event",
+    "biweekly_event_indicator": "Biweekly cadence?",
+    "weekly_event_indicator": "Weekly cadence?",
+    "back_to_back_event_indicator": "Back-to-back event?",
+    "first_event_after_long_break": "First event after a break?",
+    # Schedule & holiday context
+    "is_holiday_week": "Near a holiday?",
+    "is_school_break": "School break period?",
+    # Bradenton weather
+    "temperature_high": "Daytime high temperature",
+    "temperature_low": "Low temperature",
+    "average_temperature": "Average temperature",
+    "feels_like_temperature": "Feels-like temperature",
+    "temperature_at_8pm": "Temperature at 8 PM",
+    "event_window_temp_c": "Temperature near 8 PM",
+    "event_window_humidity": "Humidity near 8 PM",
+    "daily_humidity_max": "Daily peak humidity",
+    "precipitation_amount": "Rain / precipitation",
+    "event_window_precip_mm": "Rain near 8 PM",
+    "wind_speed": "Wind speed",
+    "thunderstorm_indicator": "Thunderstorm near 8 PM",
+    "severe_weather_indicator": "Severe weather",
+    "weather_discomfort_score": "Weather comfort score",
+}
+
+
+def _pretty_feature_name(col: str) -> str:
+    """Plain-English label for a feature column."""
+    if col in FEATURE_LABEL_MAP:
+        return FEATURE_LABEL_MAP[col]
+    return col.replace("_", " ").replace(" event ", " ").title()
+
+
 def _feature_importance_chart(reg, feature_columns: list[str], family_map: dict[str, str]) -> go.Figure | None:
     if not hasattr(reg, "feature_importances_"):
         return None
     importances = pd.Series(reg.feature_importances_, index=feature_columns).sort_values(ascending=True)
     top = importances.tail(12)
-    pretty_names = []
-    colors = []
+
+    # Family color groups: bronze = club momentum, silver = calendar, burgundy = weather
     family_colors = {
         "Recent attendance momentum": BRONZE_BRIGHT,
         "Community momentum": BRONZE,
@@ -1611,19 +1677,34 @@ def _feature_importance_chart(reg, feature_columns: list[str], family_map: dict[
         "Schedule & holiday context": SILVER_DIM,
         "Bradenton weather": BURGUNDY_GLOW,
     }
+    pretty_names: list[str] = []
+    colors: list[str] = []
+    families: list[str] = []
     for col in top.index:
         fam = family_map.get(col, "")
-        label = col.replace("_", " ").replace(" event ", " ").title()
-        pretty_names.append(label)
+        pretty_names.append(_pretty_feature_name(col))
         colors.append(family_colors.get(fam, BRONZE_DIM))
+        families.append(fam or "Other")
+
     fig = go.Figure(go.Bar(
         x=top.values, y=pretty_names, orientation="h",
         marker=dict(color=colors, line=dict(color=BURGUNDY, width=0.6)),
+        customdata=families,
+        hovertemplate=(
+            "<b>%{y}</b><br>"
+            "Family: %{customdata}<br>"
+            "Model reliance: %{x:.3f}"
+            "<extra></extra>"
+        ),
     ))
     fig.update_layout(**_layout(
-        height=420, margin=dict(l=20, r=20, t=20, b=30),
-        xaxis=dict(showgrid=True, gridcolor="rgba(224,224,224,0.05)",
-                   color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)"),
+        height=440, margin=dict(l=20, r=20, t=20, b=46),
+        xaxis=dict(
+            title=dict(text="Model reliance", font=dict(color=SILVER_DIM, size=11)),
+            showgrid=True, gridcolor="rgba(224,224,224,0.05)",
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            tickfont=dict(color=SILVER_DIM, size=10),
+        ),
         yaxis=dict(color=SILVER, linecolor="rgba(224,224,224,0.12)",
                    automargin=True, tickfont=dict(color=SILVER, size=11)),
     ))
@@ -2074,10 +2155,42 @@ def _tab_model(history: pd.DataFrame, reg, metadata: dict) -> None:
     family_map = metadata.get("feature_family", {})
     fig = _feature_importance_chart(reg, metadata["feature_columns"], family_map)
     if fig is not None:
+        # Framing card just above the chart
+        st.markdown(
+            """
+            <div class="kc-explain" style="margin-top:0.6rem;">
+              <b>What does the model rely on most?</b><br>
+              Longer bars mean the model used that signal more when making
+              attendance forecasts. Bars are colored by family:
+              <span style="display:inline-block; width:0.65rem; height:0.65rem; background:#C4A77D; border-radius:2px; margin-right:0.25rem; vertical-align:middle;"></span>
+              <b style="color:#C4A77D;">bronze</b> = recent attendance + community momentum,
+              <span style="display:inline-block; width:0.65rem; height:0.65rem; background:#9BA09B; border-radius:2px; margin-right:0.25rem; margin-left:0.5rem; vertical-align:middle;"></span>
+              <b style="color:#9BA09B;">silver</b> = calendar timing,
+              <span style="display:inline-block; width:0.65rem; height:0.65rem; background:#5a1124; border-radius:2px; margin-right:0.25rem; margin-left:0.5rem; vertical-align:middle;"></span>
+              <b style="color:#d4a3b1;">burgundy</b> = weather.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
         _chart_panel(
-            "Which signals drive the forecast",
+            "What does the model rely on most?",
             fig,
-            "Bar length is how much the model relies on that signal. Bronze = recent attendance momentum and community signals. Silver = calendar timing. Burgundy = weather.",
+            "Longer bars mean the model leaned on that signal more often. "
+            "Hover a bar to see which family it belongs to.",
+        )
+
+        st.markdown(
+            """
+            <div class="kc-trust" style="margin-top:0.2rem;">
+              <b>Takeaway.</b> Recent attendance and community momentum drive
+              the forecast most. Weather and calendar timing help fine-tune the
+              prediction, but the model mostly learns from how active the club
+              has been lately. Bars show <i>which signals the model relied on</i>
+              &mdash; not which ones <i>cause</i> attendance to change.
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
     # ---- what model uses / doesn't ----
