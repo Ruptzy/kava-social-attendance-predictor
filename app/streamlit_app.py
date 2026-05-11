@@ -1867,6 +1867,12 @@ def _tab_weather(history: pd.DataFrame, pred) -> None:
     temp_fig = _temp_vs_attendance_chart(history)
     comfort_fig = _comfort_box_chart(history)
 
+    temp_title = "Do hotter days change turnout?"
+    temp_caption = (
+        "Each dot is one bracket night. The dashed line shows the overall "
+        "direction of the relationship across the recorded data."
+    )
+
     # Row 1: humidity vs temperature scatters
     if humidity_fig is not None and temp_fig is not None:
         col_a, col_b = st.columns(2)
@@ -1875,19 +1881,32 @@ def _tab_weather(history: pd.DataFrame, pred) -> None:
                 "Were muggy nights different?",
                 humidity_fig,
                 "Higher humidity can make it less comfortable to travel out for a bracket. "
-                "Dotted bronze line is the empirical trend across recorded nights.",
+                "The dashed bronze line shows the overall direction of the relationship.",
             )
         with col_b:
-            _chart_panel(
-                "Were hotter nights different?",
-                temp_fig,
-                "Each dot is one bracket night. The dotted bronze line is the empirical trend.",
-            )
+            _chart_panel(temp_title, temp_fig, temp_caption)
     else:
         if humidity_fig is not None:
             _chart_panel("Were muggy nights different?", humidity_fig)
         if temp_fig is not None:
-            _chart_panel("Were hotter nights different?", temp_fig)
+            _chart_panel(temp_title, temp_fig, temp_caption)
+
+    # Plain-language takeaway for the temperature chart - placed full-width
+    # under the row so it reads even when the chart is in a column.
+    if temp_fig is not None:
+        st.markdown(
+            """
+            <div class="kc-trust" style="margin-top:0.2rem;">
+              <b>What this means.</b> Warmer days appear to be linked with
+              slightly higher turnout, but the pattern is modest. Most events
+              still cluster around typical turnout levels, so temperature is
+              best used as a <i>supporting context signal</i> alongside recent
+              attendance and calendar timing &mdash; not the main driver of
+              a busy night.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     # Row 2: comfort score box
     if comfort_fig is not None:
