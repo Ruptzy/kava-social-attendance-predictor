@@ -180,20 +180,32 @@ def build_feature_row(target_date: date, history: pd.DataFrame, metadata: dict) 
         "rolling_3_avg_num_games": rolling_3_avg_num_games,
         "rolling_3_avg_new_players": rolling_3_avg_new_players,
         "rolling_3_avg_returning_players": rolling_3_avg_returning_players,
+        # Daily weather
         "temperature_high": weather.get("temperature_high", np.nan),
         "temperature_low": weather.get("temperature_low", np.nan),
         "average_temperature": weather.get("average_temperature", np.nan),
         "feels_like_temperature": weather.get("feels_like_temperature", np.nan),
         "precipitation_amount": weather.get("precipitation_amount", np.nan),
+        "wind_speed": weather.get("wind_speed", np.nan),
+        # Event-window (hourly-derived) features
+        "temperature_at_8pm": weather.get("temperature_at_8pm", np.nan),
+        "event_window_temp_c": weather.get("event_window_temp_c", np.nan),
+        "event_window_humidity": weather.get("event_window_humidity", np.nan),
+        "daily_humidity_max": weather.get("daily_humidity_max", np.nan),
+        "event_window_precip_mm": weather.get("event_window_precip_mm", np.nan),
+        # Derived flags + comfort score
         "rain_indicator": weather.get("rain_indicator", np.nan),
         "thunderstorm_indicator": weather.get("thunderstorm_indicator", np.nan),
-        "wind_speed": weather.get("wind_speed", np.nan),
         "severe_weather_indicator": weather.get("severe_weather_indicator", np.nan),
+        "weather_discomfort_score": weather.get("weather_discomfort_score", np.nan),
     }
 
     feature_columns = metadata["feature_columns"]
     medians = metadata["feature_medians"]
-    X = pd.DataFrame([row])[feature_columns]
+    # Build the input frame; only the columns the trained model expects.
+    # Missing column names (e.g. when rolling out a new model) are tolerated
+    # by reindexing to the model's expected columns.
+    X = pd.DataFrame([row]).reindex(columns=feature_columns)
     X = X.fillna(pd.Series(medians))
     return X
 

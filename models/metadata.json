@@ -1,5 +1,5 @@
 {
-  "trained_at": "2026-05-11T18:40:07.625721",
+  "trained_at": "2026-05-11T18:46:57.811363",
   "feature_columns": [
     "month",
     "day_of_month",
@@ -39,11 +39,16 @@
     "temperature_low",
     "average_temperature",
     "feels_like_temperature",
+    "temperature_at_8pm",
+    "event_window_temp_c",
+    "event_window_humidity",
+    "daily_humidity_max",
     "precipitation_amount",
-    "rain_indicator",
-    "thunderstorm_indicator",
+    "event_window_precip_mm",
     "wind_speed",
-    "severe_weather_indicator"
+    "thunderstorm_indicator",
+    "severe_weather_indicator",
+    "weather_discomfort_score"
   ],
   "feature_family": {
     "previous_event_attendance": "Recent attendance momentum",
@@ -75,11 +80,16 @@
     "temperature_low": "Bradenton weather",
     "average_temperature": "Bradenton weather",
     "feels_like_temperature": "Bradenton weather",
+    "temperature_at_8pm": "Bradenton weather",
+    "event_window_temp_c": "Bradenton weather",
+    "event_window_humidity": "Bradenton weather",
+    "daily_humidity_max": "Bradenton weather",
     "precipitation_amount": "Bradenton weather",
-    "rain_indicator": "Bradenton weather",
-    "thunderstorm_indicator": "Bradenton weather",
+    "event_window_precip_mm": "Bradenton weather",
     "wind_speed": "Bradenton weather",
+    "thunderstorm_indicator": "Bradenton weather",
     "severe_weather_indicator": "Bradenton weather",
+    "weather_discomfort_score": "Bradenton weather",
     "previous_event_num_games": "Community momentum",
     "previous_event_unique_players": "Community momentum",
     "previous_event_new_players_count": "Community momentum",
@@ -129,11 +139,16 @@
     "temperature_low": 19.5,
     "average_temperature": 23.7,
     "feels_like_temperature": 30.65,
+    "temperature_at_8pm": 23.700000000000003,
+    "event_window_temp_c": 23.450000000000003,
+    "event_window_humidity": 80.5,
+    "daily_humidity_max": 95.0,
     "precipitation_amount": 0.6,
-    "rain_indicator": 0.0,
-    "thunderstorm_indicator": 0.0,
+    "event_window_precip_mm": 0.0,
     "wind_speed": 16.9,
-    "severe_weather_indicator": 0.0
+    "thunderstorm_indicator": 0.0,
+    "severe_weather_indicator": 0.0,
+    "weather_discomfort_score": 1.0
   },
   "median_attendance_threshold": 15.5,
   "n_training_events": 72,
@@ -155,35 +170,35 @@
       "name": "ridge",
       "label": "Ridge Regression",
       "blurb": "Simple interpretable linear model with L2 regularization.",
-      "cv_mae": 4.894046303734927,
-      "cv_rmse": 5.809223346414169,
-      "holdout_mae": 5.025466592836544,
-      "holdout_rmse": 9.546269451786785
+      "cv_mae": 5.621878993279885,
+      "cv_rmse": 6.506808417967183,
+      "holdout_mae": 4.710574735810993,
+      "holdout_rmse": 9.850268827718242
     },
     {
       "name": "random_forest",
       "label": "Random Forest",
       "blurb": "Non-linear tree ensemble; captures interactions.",
-      "cv_mae": 3.531194715007216,
-      "cv_rmse": 4.505631981947098,
-      "holdout_mae": 2.337589577089576,
-      "holdout_rmse": 2.7632655628511302
+      "cv_mae": 3.5729839978518956,
+      "cv_rmse": 4.518854236219531,
+      "holdout_mae": 2.304118242372707,
+      "holdout_rmse": 2.812355433274122
     },
     {
       "name": "gradient_boosting",
       "label": "Gradient Boosting",
       "blurb": "Sequential trees that correct each others' errors.",
-      "cv_mae": 3.464666966352818,
-      "cv_rmse": 4.375371378048735,
-      "holdout_mae": 2.48557542211663,
-      "holdout_rmse": 2.9111239749152875
+      "cv_mae": 3.7884669597424585,
+      "cv_rmse": 4.683237638441397,
+      "holdout_mae": 2.556135882732188,
+      "holdout_rmse": 2.9705924302650635
     }
   ],
   "naive_baseline_mae": 3.4285714285714284,
-  "regression_cv_mae": 3.531194715007216,
-  "regression_cv_rmse": 4.505631981947098,
-  "regression_holdout_mae": 2.337589577089576,
-  "regression_holdout_rmse": 2.7632655628511302,
-  "classification_cv_accuracy": 0.6071428571428572,
-  "classification_cv_f1": 0.5679957469431154
+  "regression_cv_mae": 3.5729839978518956,
+  "regression_cv_rmse": 4.518854236219531,
+  "regression_holdout_mae": 2.304118242372707,
+  "regression_holdout_rmse": 2.812355433274122,
+  "classification_cv_accuracy": 0.6428571428571428,
+  "classification_cv_f1": 0.5837121212121212
 }

@@ -201,9 +201,9 @@ computed once over the gold table — see `models/metadata.json`.
 | Model | Holdout MAE (last 14 events) | Notes |
 | --- | --- | --- |
 | Naive (last event) | 3.43 players | Always predicts the previous night's count. The baseline to beat. |
-| Ridge Regression | 5.01 players | Simple interpretable linear model — too rigid for this signal. |
-| **Random Forest** | **2.32 players** ✅ | Non-linear tree ensemble. **Selected.** |
-| Gradient Boosting | 2.51 players | Strong second place. |
+| Ridge Regression | 4.71 players | Simple interpretable linear model — too rigid for this signal. |
+| **Random Forest** | **2.30 players** ✅ | Non-linear tree ensemble. **Selected.** |
+| Gradient Boosting | 2.56 players | Strong second place. |
 
 The selected Random Forest model improved over the naive baseline by about
 1.1 players on the chronological holdout set. All runs are tracked in MLflow

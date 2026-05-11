@@ -68,10 +68,18 @@ FEATURE_COLUMNS = [
     "previous_event_draw_rate", "previous_event_games_per_player",
     "rolling_3_avg_num_games", "rolling_3_avg_new_players",
     "rolling_3_avg_returning_players",
-    # weather (from Open-Meteo merge)
+    # weather (from Open-Meteo merge) - lead with comfort + continuous
+    # measurements; the binary rain_indicator is excluded because subtropical
+    # Florida makes it noisy. precipitation_amount stays as a continuous mm
+    # value.
     "temperature_high", "temperature_low", "average_temperature",
-    "feels_like_temperature", "precipitation_amount", "rain_indicator",
-    "thunderstorm_indicator", "wind_speed", "severe_weather_indicator",
+    "feels_like_temperature", "temperature_at_8pm",
+    "event_window_temp_c",
+    "event_window_humidity", "daily_humidity_max",
+    "precipitation_amount", "event_window_precip_mm",
+    "wind_speed",
+    "thunderstorm_indicator", "severe_weather_indicator",
+    "weather_discomfort_score",
 ]
 
 # Feature family map (used in the app for narrative grouping)
@@ -100,8 +108,13 @@ FEATURE_FAMILY = {
     # Bradenton weather
     **{c: "Bradenton weather" for c in [
         "temperature_high", "temperature_low", "average_temperature",
-        "feels_like_temperature", "precipitation_amount", "rain_indicator",
-        "thunderstorm_indicator", "wind_speed", "severe_weather_indicator",
+        "feels_like_temperature", "temperature_at_8pm",
+        "event_window_temp_c",
+        "event_window_humidity", "daily_humidity_max",
+        "precipitation_amount", "event_window_precip_mm",
+        "wind_speed",
+        "thunderstorm_indicator", "severe_weather_indicator",
+        "weather_discomfort_score",
     ]},
     # Community momentum
     **{c: "Community momentum" for c in [
@@ -395,9 +408,16 @@ def main() -> None:
         "rolling_3_event_attendance", "rolling_5_event_attendance",
         "rolling_3_avg_num_games", "rolling_3_avg_new_players",
         "rolling_3_avg_returning_players",
+        # Daily weather (kept for the calendar/seasonality narrative)
         "temperature_high", "temperature_low", "average_temperature",
-        "feels_like_temperature", "precipitation_amount", "rain_indicator",
-        "thunderstorm_indicator", "wind_speed", "severe_weather_indicator",
+        "feels_like_temperature",
+        "precipitation_amount", "wind_speed",
+        # Hourly-derived event-window features (the headlines)
+        "event_window_temp_c", "temperature_at_8pm",
+        "event_window_humidity", "daily_humidity_max",
+        "event_window_precip_mm",
+        "rain_indicator", "thunderstorm_indicator", "severe_weather_indicator",
+        "weather_discomfort_score",
     ]
     history_cols = [c for c in history_cols if c in events.columns]
     events[history_cols].to_parquet(MODELS_DIR / "event_history.parquet", index=False)

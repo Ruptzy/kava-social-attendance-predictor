@@ -1311,15 +1311,124 @@ def _two_bucket_box(
     return fig
 
 
-def _rain_compare_chart(history: pd.DataFrame) -> go.Figure | None:
-    # The labels match the underlying definition: rain_indicator now means
-    # "meaningful precipitation between 7 PM and 11 PM" (~0.5 mm threshold),
-    # not "any trace of rain anytime during the day".
-    return _two_bucket_box(history, "rain_indicator", "Rain near 8 PM", "Dry near 8 PM")
-
-
 def _holiday_compare_chart(history: pd.DataFrame) -> go.Figure | None:
     return _two_bucket_box(history, "is_holiday_week", "Holiday-week night", "Regular-week night")
+
+
+def _humidity_vs_attendance_chart(history: pd.DataFrame) -> go.Figure | None:
+    """Humidity (event-window or daily-max fallback) vs attendance scatter
+    with an empirical least-squares trend line."""
+    h = history.copy()
+    if "event_window_humidity" in h.columns and h["event_window_humidity"].notna().any():
+        x_col = "event_window_humidity"
+        x_label = "Humidity near 8 PM (%)"
+    elif "daily_humidity_max" in h.columns and h["daily_humidity_max"].notna().any():
+        x_col = "daily_humidity_max"
+        x_label = "Daily peak humidity (%)"
+    else:
+        return None
+    h = h.dropna(subset=[x_col]).copy()
+    if h.empty:
+        return None
+
+    x_arr = h[x_col].to_numpy()
+    y_arr = h["attendance_count"].to_numpy()
+    fig = go.Figure()
+    if len(x_arr) >= 2:
+        slope, intercept = np.polyfit(x_arr, y_arr, 1)
+        fit_x = np.linspace(x_arr.min(), x_arr.max(), 40)
+        fit_y = slope * fit_x + intercept
+        fig.add_trace(go.Scatter(
+            x=fit_x, y=fit_y, mode="lines", name="Empirical trend",
+            line=dict(color=BRONZE, width=2.4, dash="dot"),
+            hoverinfo="skip",
+        ))
+    fig.add_trace(go.Scatter(
+        x=h[x_col], y=h["attendance_count"],
+        mode="markers", name="Bracket nights",
+        marker=dict(color=BRONZE_BRIGHT, size=11, opacity=0.55,
+                    line=dict(color=BURGUNDY, width=1.2)),
+        customdata=h["event_date"].dt.strftime("%b %d, %Y"),
+        hovertemplate=(
+            "<b>%{customdata}</b><br>"
+            f"{x_label.replace(' (%)','').strip()}: %{{x:.0f}}%<br>"
+            "Attendance: %{y:.0f} players<extra></extra>"
+        ),
+    ))
+    fig.update_layout(**_layout(
+        height=340, margin=dict(l=20, r=20, t=20, b=44),
+        xaxis=dict(
+            title=dict(text=x_label, font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)", showgrid=False,
+            tickfont=dict(color=SILVER_DIM, size=11), zeroline=False,
+        ),
+        yaxis=dict(
+            title=dict(text="Players that night", font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            gridcolor="rgba(224,224,224,0.06)",
+            tickfont=dict(color=SILVER_DIM, size=11), rangemode="tozero", zeroline=False,
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    bgcolor="rgba(0,0,0,0)", font=dict(color=SILVER_DIM, size=11)),
+    ))
+    return fig
+
+
+def _comfort_box_chart(history: pd.DataFrame) -> go.Figure | None:
+    """Box plot of attendance grouped by weather-comfort bucket.
+       Comfortable = score 0-1, Moderate = 2, Rough weather = 3+."""
+    if "weather_discomfort_score" not in history.columns:
+        return None
+    h = history.dropna(subset=["weather_discomfort_score"]).copy()
+    if h.empty:
+        return None
+
+    def bucket(s):
+        if s <= 1:
+            return "Comfortable"
+        if s == 2:
+            return "Moderate"
+        return "Rough weather"
+
+    h["comfort_bucket"] = h["weather_discomfort_score"].astype(int).apply(bucket)
+    order = ["Comfortable", "Moderate", "Rough weather"]
+    colors = {
+        "Comfortable": BRONZE_BRIGHT,
+        "Moderate": BRONZE_DIM,
+        "Rough weather": BURGUNDY_GLOW,
+    }
+    fills = {
+        "Comfortable": "rgba(196, 167, 125, 0.20)",
+        "Moderate": "rgba(111, 90, 65, 0.22)",
+        "Rough weather": "rgba(90, 17, 36, 0.30)",
+    }
+    fig = go.Figure()
+    for label in order:
+        sub = h[h["comfort_bucket"] == label]
+        if sub.empty:
+            continue
+        fig.add_trace(go.Box(
+            y=sub["attendance_count"], name=f"{label}  ·  {len(sub)} nights",
+            marker=dict(color=colors[label], size=6, opacity=0.7,
+                        line=dict(color=BURGUNDY, width=0.8)),
+            line=dict(color=colors[label], width=1.5),
+            fillcolor=fills[label],
+            boxmean=True, boxpoints="all", jitter=0.5, pointpos=0,
+            hovertemplate="Players: %{y:.0f}<extra>" + label + "</extra>",
+        ))
+    fig.update_layout(**_layout(
+        height=340, margin=dict(l=20, r=20, t=20, b=40),
+        xaxis=dict(color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+                   tickfont=dict(color=SILVER, size=12), showgrid=False, ticks=""),
+        yaxis=dict(
+            title=dict(text="Players that night", font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            gridcolor="rgba(224,224,224,0.06)",
+            tickfont=dict(color=SILVER_DIM, size=11), rangemode="tozero", zeroline=False,
+        ),
+        showlegend=False,
+    ))
+    return fig
 
 
 def _temp_vs_attendance_chart(history: pd.DataFrame) -> go.Figure | None:
@@ -1607,49 +1716,155 @@ def _tab_calendar(history: pd.DataFrame) -> None:
         )
 
 
-def _tab_weather(history: pd.DataFrame) -> None:
-    _explain(
-        "<b>Kava Social is a physical venue and bracket nights tip off at "
-        f"{EVENT_START_TIME}.</b> Florida afternoons get plenty of brief showers, "
-        "but a 10-minute thunderstorm at noon shouldn't make a clear evening "
-        "feel rainy. So a night is counted as rainy only when meaningful "
-        "precipitation was actually recorded near the bracket window (7&nbsp;PM&nbsp;-&nbsp;11&nbsp;PM, "
-        "Bradenton, FL; about 0.5&nbsp;mm / 0.02&nbsp;in or more)."
-    )
-    rain_fig = _rain_compare_chart(history)
-    temp_fig = _temp_vs_attendance_chart(history)
-    rain_caption = (
-        "Box plots show the spread of attendance for each bucket. "
-        "A night is counted as rainy only when meaningful precipitation was "
-        "recorded near the 8&nbsp;PM event window &mdash; passing afternoon showers "
-        "don't qualify."
-    )
-    cols = st.columns(2 if temp_fig is not None and rain_fig is not None else 1)
-    if rain_fig is not None and temp_fig is not None:
-        with cols[0]:
-            _chart_panel("Rain near 8 PM vs dry near 8 PM", rain_fig, rain_caption)
-        with cols[1]:
-            _chart_panel("Temperature vs attendance", temp_fig,
-                         "Each dot is one bracket night. The dotted bronze line is the empirical trend.")
+def _weather_context_cards(pred) -> None:
+    """Top-of-tab snapshot of the forecast night's weather inputs, summarising
+    what the model is reading for the date currently selected in the sidebar."""
+    f = pred.features_used or {}
+
+    def fmt(v, suffix=""):
+        if v is None or pd.isna(v):
+            return "—"
+        return f"{v:.0f}{suffix}"
+
+    # Pick the best available humidity (event-window first, daily-max fallback)
+    hum_label = "Humidity near 8 PM"
+    hum_val = f.get("event_window_humidity")
+    if hum_val is None or pd.isna(hum_val):
+        hum_val = f.get("daily_humidity_max")
+        hum_label = "Daily peak humidity"
+
+    # Pick the best available temperature
+    temp_c = f.get("temperature_at_8pm")
+    temp_label = "Temperature at 8 PM"
+    if temp_c is None or pd.isna(temp_c):
+        temp_c = f.get("event_window_temp_c")
+        temp_label = "Temperature near 8 PM"
+    if temp_c is None or pd.isna(temp_c):
+        temp_c = f.get("temperature_high")
+        temp_label = "Daytime high"
+    temp_f = (temp_c * 9.0 / 5.0 + 32.0) if (temp_c is not None and pd.notna(temp_c)) else None
+
+    rain_mm = f.get("event_window_precip_mm")
+    rain_label = "Rain near 8 PM"
+    if rain_mm is None or pd.isna(rain_mm):
+        rain_mm = f.get("precipitation_amount")
+        rain_label = "Rain that day"
+    rain_in = (rain_mm * 0.03937) if (rain_mm is not None and pd.notna(rain_mm)) else None
+
+    comfort = f.get("weather_discomfort_score")
+    if comfort is None or pd.isna(comfort):
+        comfort_label = "Unknown"
     else:
-        if rain_fig is not None:
-            _chart_panel("Rain near 8 PM vs dry near 8 PM", rain_fig, rain_caption)
+        comfort_int = int(comfort)
+        comfort_label = (
+            "Comfortable" if comfort_int <= 1
+            else ("Moderate" if comfort_int == 2 else "Rough weather")
+        )
+
+    rain_disp = "—" if rain_in is None else (
+        "Trace / none" if rain_in < 0.01 else f"{rain_in:.2f} in"
+    )
+    temp_disp = "—" if temp_f is None else f"{temp_f:.0f} °F"
+    hum_disp = "—" if hum_val is None or pd.isna(hum_val) else f"{hum_val:.0f}%"
+
+    st.markdown(
+        f"""
+        <div class="kc-stat-strip">
+          <div class="kc-stat-chip">
+            <div class="label">{hum_label}</div>
+            <div class="value">{hum_disp}</div>
+            <div class="sub">muggy &ge; 80%</div>
+          </div>
+          <div class="kc-stat-chip">
+            <div class="label">{temp_label}</div>
+            <div class="value">{temp_disp}</div>
+            <div class="sub">hot &ge; 88 °F</div>
+          </div>
+          <div class="kc-stat-chip">
+            <div class="label">{rain_label}</div>
+            <div class="value">{rain_disp}</div>
+            <div class="sub">meaningful &ge; 0.10 in</div>
+          </div>
+          <div class="kc-stat-chip">
+            <div class="label">Weather comfort</div>
+            <div class="value value-winner">{comfort_label}</div>
+            <div class="sub">score {fmt(comfort)} of 5</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _tab_weather(history: pd.DataFrame, pred) -> None:
+    _explain(
+        "<b>Florida rain is hard to label cleanly</b> &mdash; afternoon thunderstorms "
+        "come and go fast, so a simple rain yes/no flag is unreliable. KavaCast "
+        "focuses on <b>weather comfort</b> instead: humidity, temperature, and "
+        "meaningful precipitation give a more stable picture of whether the night "
+        "may feel easy or annoying for players to make the trip. The model still "
+        "sees the underlying numbers; the charts below show how attendance has "
+        "moved with each of them."
+    )
+
+    # Forecast-night context cards
+    _weather_context_cards(pred)
+    st.write("")  # spacer
+
+    humidity_fig = _humidity_vs_attendance_chart(history)
+    temp_fig = _temp_vs_attendance_chart(history)
+    comfort_fig = _comfort_box_chart(history)
+
+    # Row 1: humidity vs temperature scatters
+    if humidity_fig is not None and temp_fig is not None:
+        col_a, col_b = st.columns(2)
+        with col_a:
+            _chart_panel(
+                "Were muggy nights different?",
+                humidity_fig,
+                "Higher humidity can make it less comfortable to travel out for a bracket. "
+                "Dotted bronze line is the empirical trend across recorded nights.",
+            )
+        with col_b:
+            _chart_panel(
+                "Were hotter nights different?",
+                temp_fig,
+                "Each dot is one bracket night. The dotted bronze line is the empirical trend.",
+            )
+    else:
+        if humidity_fig is not None:
+            _chart_panel("Were muggy nights different?", humidity_fig)
         if temp_fig is not None:
-            _chart_panel("Temperature vs attendance", temp_fig)
-        if rain_fig is None and temp_fig is None:
-            st.info("Weather data has not been merged into the event history yet. "
-                    "Run `python src/weather.py` and then `python src/train_model.py` "
-                    "to enable these charts.")
+            _chart_panel("Were hotter nights different?", temp_fig)
+
+    # Row 2: comfort score box
+    if comfort_fig is not None:
+        _chart_panel(
+            "Did rough-weather nights look different from comfortable ones?",
+            comfort_fig,
+            "Comfort score combines five rough-weather signals (humid ≥ 80%, hot ≥ 88 °F, "
+            "rain ≥ 0.10 in, wind ≥ 15 mph, thunderstorm). 0–1 = comfortable, 2 = moderate, "
+            "3 or more = rough weather.",
+        )
+
+    if humidity_fig is None and temp_fig is None and comfort_fig is None:
+        st.info(
+            "Weather data has not been merged into the event history yet. "
+            "Run `python src/weather.py` and then `python src/train_model.py` "
+            "to enable these charts."
+        )
 
     # Honest data-quality note
     st.markdown(
         '<div class="kc-trust" style="margin-top:0.6rem;">'
-        '<b>Data note.</b> Because bracket nights begin at '
-        f'{EVENT_START_TIME}, the model uses hourly Bradenton weather '
-        'aggregated over the 7&nbsp;PM&nbsp;-&nbsp;11&nbsp;PM event window when available '
-        '(Open-Meteo archive / 16-day forecast). For dates beyond the '
-        'forecast horizon the model falls back to daily aggregates and the '
-        'rain label is approximate.'
+        f'<b>Data note.</b> Because bracket nights begin at {EVENT_START_TIME}, '
+        'humidity and precipitation here are aggregated over the 7&nbsp;PM&nbsp;-&nbsp;11&nbsp;PM '
+        'event window when hourly Bradenton weather is available '
+        '(Open-Meteo archive / 16-day forecast). For dates beyond the forecast '
+        'horizon the model falls back to daily aggregates and uses median values '
+        'where needed. We do not use a binary "rainy night" flag in the main chart '
+        'because Florida afternoons make that label noisy &mdash; the comfort '
+        'score and continuous measurements are more honest.'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -1952,7 +2167,7 @@ def main() -> None:
     with tab_cal:
         _tab_calendar(history)
     with tab_wx:
-        _tab_weather(history)
+        _tab_weather(history, pred)
     with tab_com:
         _tab_community(history)
     with tab_mod:
