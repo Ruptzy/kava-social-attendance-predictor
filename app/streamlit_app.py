@@ -44,6 +44,30 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Every Kava Social bracket night begins at 8:00 PM (Bradenton, FL).
+# The per-game `Time` values in the raw data are placeholder sort indices,
+# not actual start times - the canonical event start is always 8 PM.
+EVENT_START_TIME = "8:00 PM"
+EVENT_START_HOUR_24 = 20  # for any place that needs a 24h hour for weather etc.
+
+# Default Plotly config applied to every chart in the app.
+# - displayModeBar="hover": the modebar (zoom / pan / reset / png) appears on
+#   hover, so it's always reachable but never visually loud.
+# - scrollZoom=False prevents users from zooming by accident when scrolling.
+# - doubleClick="reset" gives a one-click way back to the full view.
+DEFAULT_CHART_CONFIG = {
+    "displayModeBar": "hover",
+    "displaylogo": False,
+    "modeBarButtonsToRemove": [
+        "lasso2d", "select2d", "autoScale2d", "toggleSpikelines",
+        "hoverClosestCartesian", "hoverCompareCartesian",
+    ],
+    "scrollZoom": False,
+    "doubleClick": "reset",
+    "responsive": True,
+    "toImageButtonOptions": {"format": "png", "filename": "kava_chess_clock_chart"},
+}
+
 NEAR_BLACK = "#03110D"
 DEEP_GREEN = "#16302B"
 DEEP_GREEN_2 = "#1a3933"
@@ -100,9 +124,18 @@ def _inject_css() -> None:
             border-radius: 22px;
             padding: 2.4rem 2.6rem 2.3rem;
             margin: 0 0 1.5rem;
+            /* Layered background: bronze + burgundy radial glows, a *very* faint
+               cross-hatch (reads as fabric weave / chessboard rotation), and the
+               base gradient. The hatch sits at ~1.2% opacity - paper, not pattern. */
             background:
                 radial-gradient(circle at 92% -10%, rgba(163, 133, 96, 0.18) 0%, transparent 55%),
                 radial-gradient(circle at 0% 110%, rgba(57, 5, 23, 0.55) 0%, transparent 55%),
+                repeating-linear-gradient(45deg,
+                    rgba(163, 133, 96, 0.012) 0, rgba(163, 133, 96, 0.012) 1px,
+                    transparent 1px, transparent 14px),
+                repeating-linear-gradient(-45deg,
+                    rgba(163, 133, 96, 0.012) 0, rgba(163, 133, 96, 0.012) 1px,
+                    transparent 1px, transparent 14px),
                 linear-gradient(135deg, #061812 0%, #0e251f 50%, var(--kc-card) 100%);
             border: 1px solid var(--kc-border);
             box-shadow: 0 24px 60px rgba(0,0,0,0.55), inset 0 1px 0 rgba(224, 224, 224, 0.04);
@@ -111,6 +144,21 @@ def _inject_css() -> None:
         .kc-hero::before {
             content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px;
             background: linear-gradient(90deg, transparent 0%, var(--kc-bronze-dim) 18%, var(--kc-bronze-bright) 50%, var(--kc-bronze-dim) 82%, transparent 100%);
+        }
+        /* The hero gets a single, very-faint chess knight silhouette in the
+           bottom-right - a low-stimulation thematic anchor. Whispers, doesn't shout. */
+        .kc-hero::after {
+            content: "♞";
+            position: absolute;
+            bottom: -7rem;
+            right: -1.5rem;
+            font-size: 22rem;
+            color: rgba(163, 133, 96, 0.05);
+            font-family: "Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", sans-serif;
+            line-height: 1;
+            transform: rotate(-12deg);
+            pointer-events: none;
+            user-select: none;
         }
         .kc-eyebrow {
             text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.28em;
@@ -508,9 +556,9 @@ def _layout(**overrides):
 # ----------------------------------------------------------------------------
 # HERO
 # ----------------------------------------------------------------------------
-HERO_HTML = """
+HERO_HTML = f"""
 <div class="kc-hero">
-  <div class="kc-eyebrow">Kava Social Chess Club · Bradenton, Florida</div>
+  <div class="kc-eyebrow">Kava Social Chess Club · Bradenton, Florida · Bracket nights begin {EVENT_START_TIME}</div>
   <h1 class="kc-title">Kava Chess <span class="kc-title-accent">Clock</span></h1>
   <div class="kc-subtitle">Attendance Forecasting for Kava Social Chess Club</div>
   <p class="kc-desc">
@@ -520,6 +568,7 @@ HERO_HTML = """
   </p>
   <div class="kc-badges">
     <span class="kc-badge kc-badge--bronze">Bradenton · FL</span>
+    <span class="kc-badge kc-badge--bronze">Tip-off {EVENT_START_TIME}</span>
     <span class="kc-badge kc-badge--burgundy">Attendance forecast</span>
     <span class="kc-badge kc-badge--silver">Kava Social Chess</span>
     <span class="kc-badge kc-badge--silver">MLflow pipeline</span>
@@ -547,7 +596,7 @@ def _chart_panel(eyebrow: str, fig: go.Figure, caption: str | None = None, key: 
     if key is None:
         key = "chart_" + "".join(c if c.isalnum() else "_" for c in eyebrow.lower())
     st.markdown(f'<div class="kc-chart-panel"><h4>{eyebrow}</h4>', unsafe_allow_html=True)
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key=key)
+    st.plotly_chart(fig, use_container_width=True, config=DEFAULT_CHART_CONFIG, key=key)
     if caption:
         st.markdown(f'<div class="kc-chart-caption">{caption}</div>', unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
@@ -579,8 +628,9 @@ def _sidebar(history: pd.DataFrame):
             value=default_date,
             min_value=last_event + timedelta(days=1),
             max_value=date.today() + timedelta(days=180),
-            help="Pick the upcoming date you want to plan for.",
+            help=f"Pick the upcoming date you want to plan for. Bracket nights always begin at {EVENT_START_TIME}.",
         )
+        st.caption(f"Bracket nights always begin at **{EVENT_START_TIME}**.")
 
         st.markdown("---")
         st.markdown(
@@ -671,7 +721,7 @@ def _forecast_summary(pred) -> None:
             <div class="kc-card kc-card--feature">
               <div class="kc-card-label">Predicted Attendance</div>
               <div class="kc-card-value kc-card-value--bronze">{pred.predicted_attendance_rounded}<span class="kc-card-unit">players</span></div>
-              <div class="kc-card-sub">Plain estimate of how many players are likely to show up on <b>{pred.event_date}</b>.</div>
+              <div class="kc-card-sub">Plain estimate of how many players are likely to show up on <b>{pred.event_date}</b> · tip-off <b>{EVENT_START_TIME}</b>.</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -731,33 +781,79 @@ def _forecast_summary(pred) -> None:
 # CHARTS
 # ----------------------------------------------------------------------------
 def _trend_chart(history: pd.DataFrame, pred) -> go.Figure:
+    """Attendance over time with rolling averages and the forecast marker.
+
+    Design choices:
+    - actual attendance is silver and slightly thicker so the eye lands there first
+    - the 5-event rolling average is solid bronze (the primary trend reader)
+    - the 3-event rolling average is bronze-dim dotted (less assertive than 5-event)
+    - forecast point is a large bronze diamond with a burgundy ring + dashed vertical
+      drop line so you can read it against the rolling average band at a glance
+    """
     h = history.sort_values("event_date").copy()
     h["rolling_3"] = h["attendance_count"].rolling(3, min_periods=1).mean()
     h["rolling_5"] = h["attendance_count"].rolling(5, min_periods=1).mean()
+    forecast_date = pd.to_datetime(pred.event_date)
+    forecast_y = pred.predicted_attendance_rounded
+
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=h["event_date"], y=h["attendance_count"],
         mode="lines+markers", name="Actual attendance",
-        line=dict(color=SILVER, width=1.7),
-        marker=dict(size=5, color=SILVER, line=dict(color=DEEP_GREEN, width=1)),
+        line=dict(color=SILVER, width=2.2, shape="linear"),
+        marker=dict(size=6, color=SILVER, line=dict(color=DEEP_GREEN, width=1.2)),
+        hovertemplate="<b>%{x|%b %d, %Y}</b><br>%{y:.0f} players<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=h["event_date"], y=h["rolling_3"],
         mode="lines", name="Last-3-event average",
-        line=dict(color=BRONZE_DIM, width=1.8, dash="dot"),
+        line=dict(color=BRONZE_DIM, width=1.6, dash="dot"),
+        hovertemplate="<b>%{x|%b %d, %Y}</b><br>3-event avg: %{y:.1f}<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=h["event_date"], y=h["rolling_5"],
         mode="lines", name="Last-5-event average",
-        line=dict(color=BRONZE, width=2.5),
+        line=dict(color=BRONZE, width=2.8, shape="spline", smoothing=0.5),
+        hovertemplate="<b>%{x|%b %d, %Y}</b><br>5-event avg: %{y:.1f}<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
-        x=[pd.to_datetime(pred.event_date)], y=[pred.predicted_attendance_rounded],
+        x=[forecast_date], y=[forecast_y],
         mode="markers", name="Forecast",
-        marker=dict(color=BRONZE_BRIGHT, size=17, symbol="diamond",
-                    line=dict(color=BURGUNDY, width=2)),
+        marker=dict(color=BRONZE_BRIGHT, size=18, symbol="diamond",
+                    line=dict(color=BURGUNDY, width=2.2)),
+        hovertemplate=f"<b>Forecast · {forecast_date:%b %d, %Y}</b><br>{forecast_y} players<extra></extra>",
     ))
-    fig.update_layout(**_layout(height=380, margin=dict(l=20, r=20, t=20, b=30)))
+    # Dashed drop line from the forecast diamond down to the x-axis so the
+    # eye lines it up with the date.
+    fig.add_shape(
+        type="line",
+        x0=forecast_date, x1=forecast_date,
+        y0=0, y1=forecast_y,
+        line=dict(color=BRONZE_DIM, width=1, dash="dot"),
+        layer="below",
+    )
+    fig.update_layout(
+        **_layout(
+            height=400, margin=dict(l=20, r=20, t=20, b=40),
+            xaxis=dict(
+                showgrid=False, color=SILVER_DIM,
+                linecolor="rgba(224,224,224,0.12)", ticks="",
+                tickfont=dict(color=SILVER_DIM, size=11),
+                rangeslider=dict(visible=False),
+                tickformatstops=[
+                    dict(dtickrange=[None, 86400000 * 90], value="%b %Y"),
+                    dict(dtickrange=[86400000 * 90, None], value="%Y"),
+                ],
+            ),
+            yaxis=dict(
+                title=dict(text="Players that night", font=dict(color=SILVER_DIM, size=11)),
+                gridcolor="rgba(224,224,224,0.06)", color=SILVER_DIM,
+                linecolor="rgba(224,224,224,0.12)", ticks="",
+                tickfont=dict(color=SILVER_DIM, size=11),
+                rangemode="tozero",
+            ),
+        )
+    )
     return fig
 
 
@@ -780,221 +876,519 @@ def _smoothed_chart(history: pd.DataFrame) -> go.Figure:
 
 
 def _prev_vs_next_chart(history: pd.DataFrame) -> go.Figure | None:
+    """Scatter of previous-night attendance vs this-night attendance with:
+    - the y=x reference line ("identical to previous")
+    - a fitted least-squares line (the empirical trend)
+    Together they reveal whether the club is trending up, down, or stable."""
     if "previous_event_attendance" not in history.columns:
         return None
     h = history.sort_values("event_date").dropna(subset=["previous_event_attendance"]).copy()
     if h.empty:
         return None
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=h["previous_event_attendance"], y=h["attendance_count"],
-        mode="markers", name="Events",
-        marker=dict(color=BRONZE, size=9, opacity=0.75,
-                    line=dict(color=BURGUNDY, width=0.8)),
-        hovertemplate="Previous night: %{x:.0f}<br>This night: %{y:.0f}<extra></extra>",
-    ))
+
     lo = min(h["previous_event_attendance"].min(), h["attendance_count"].min()) - 1
     hi = max(h["previous_event_attendance"].max(), h["attendance_count"].max()) + 1
+
+    # Empirical trend via numpy.polyfit (degree 1 = least-squares line). We use
+    # numpy instead of statsmodels because statsmodels was dropped from the
+    # Cloud-runtime requirements to keep the build slim.
+    x_arr = h["previous_event_attendance"].to_numpy()
+    y_arr = h["attendance_count"].to_numpy()
+    slope, intercept = np.polyfit(x_arr, y_arr, 1)
+    fit_x = np.linspace(lo, hi, 50)
+    fit_y = slope * fit_x + intercept
+
+    fig = go.Figure()
+    # y = x reference line - drawn first so points sit on top
     fig.add_trace(go.Scatter(
         x=[lo, hi], y=[lo, hi],
-        mode="lines", name="Identical to previous",
-        line=dict(color=SILVER_MUTE, width=1, dash="dash"),
+        mode="lines", name="Identical to previous night",
+        line=dict(color=SILVER_MUTE, width=1.2, dash="dash"),
         hoverinfo="skip",
     ))
+    # Empirical trend
+    fig.add_trace(go.Scatter(
+        x=fit_x, y=fit_y,
+        mode="lines", name="Empirical trend",
+        line=dict(color=BRONZE, width=2.4),
+        hoverinfo="skip",
+    ))
+    # Events as bronze markers with transparency to handle overlap
+    fig.add_trace(go.Scatter(
+        x=h["previous_event_attendance"], y=h["attendance_count"],
+        mode="markers", name="Bracket nights",
+        marker=dict(
+            color=BRONZE_BRIGHT, size=11, opacity=0.55,
+            line=dict(color=BURGUNDY, width=1.2),
+        ),
+        customdata=h["event_date"].dt.strftime("%b %d, %Y"),
+        hovertemplate=(
+            "<b>%{customdata}</b><br>"
+            "Previous night: %{x:.0f} players<br>"
+            "This night: %{y:.0f} players"
+            "<extra></extra>"
+        ),
+    ))
     fig.update_layout(**_layout(
-        height=340, margin=dict(l=20, r=20, t=20, b=40),
-        xaxis=dict(title="Players at the previous bracket night",
-                   color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)", showgrid=False),
-        yaxis=dict(title="Players at this bracket night",
-                   color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
-                   gridcolor="rgba(224,224,224,0.06)"),
+        height=360, margin=dict(l=20, r=20, t=20, b=44),
+        xaxis=dict(
+            title=dict(text="Players at the previous bracket night", font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)", showgrid=False,
+            tickfont=dict(color=SILVER_DIM, size=11), zeroline=False,
+        ),
+        yaxis=dict(
+            title=dict(text="Players at this bracket night", font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            gridcolor="rgba(224,224,224,0.06)",
+            tickfont=dict(color=SILVER_DIM, size=11), zeroline=False,
+        ),
     ))
     return fig
 
 
 def _monthly_heatmap(history: pd.DataFrame) -> go.Figure:
+    """Year x month average attendance heatmap. Months with no events render
+    transparent so the grid never looks broken; the bronze-to-near-black scale
+    runs from quiet months to busy ones."""
     h = history.copy()
     h["year"] = h["event_date"].dt.year
     h["month"] = h["event_date"].dt.month
     pivot = (
         h.groupby(["year", "month"])["attendance_count"].mean()
-        .reset_index().pivot(index="year", columns="month", values="attendance_count")
+        .reset_index()
+        .pivot(index="year", columns="month", values="attendance_count")
         .reindex(columns=list(range(1, 13)))
+        .sort_index()
     )
     pivot.columns = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    # Use NaN-friendly imshow: empty cells show no number and a neutral tint.
     fig = px.imshow(
         pivot, text_auto=".0f",
-        color_continuous_scale=[(0.0, NEAR_BLACK), (0.4, DEEP_GREEN_2),
-                                (0.75, BRONZE_DIM), (1.0, BRONZE_BRIGHT)],
-        aspect="auto", labels=dict(color="Avg players"),
+        color_continuous_scale=[
+            (0.0, "#0a1a14"),
+            (0.35, "#16302B"),
+            (0.65, BRONZE_DIM),
+            (1.0, BRONZE_BRIGHT),
+        ],
+        aspect="auto",
+        labels=dict(x="Month", y="Year", color="Avg players"),
     )
-    fig.update_traces(textfont=dict(color=SILVER, family="Inter", size=11))
+    fig.update_traces(
+        textfont=dict(color=SILVER, family="Inter", size=12),
+        hovertemplate="<b>%{x} %{y}</b><br>%{z:.1f} players (avg)<extra></extra>",
+        xgap=2, ygap=2,
+    )
     fig.update_layout(**_layout(
-        height=320, margin=dict(l=20, r=20, t=20, b=20),
-        coloraxis_colorbar=dict(title="Avg", tickfont=dict(color=SILVER_DIM),
-                                thickness=12, outlinewidth=0),
+        height=340, margin=dict(l=20, r=20, t=20, b=30),
+        xaxis=dict(
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            tickfont=dict(color=SILVER_DIM, size=11), side="bottom",
+            showgrid=False, ticks="",
+        ),
+        yaxis=dict(
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            tickfont=dict(color=SILVER_DIM, size=11),
+            showgrid=False, ticks="", autorange="reversed",
+        ),
+        coloraxis_colorbar=dict(
+            title=dict(text="Avg", font=dict(color=SILVER_DIM, size=11)),
+            tickfont=dict(color=SILVER_DIM, size=10),
+            thickness=10, outlinewidth=0, len=0.85,
+        ),
     ))
     return fig
 
 
 def _avg_by_month_chart(history: pd.DataFrame) -> go.Figure:
+    """Bars of average attendance by calendar month, with a horizontal
+    reference line at the all-time average so high / low months read instantly."""
     h = history.copy()
     h["month"] = h["event_date"].dt.month
     avg = h.groupby("month")["attendance_count"].mean().reindex(range(1, 13))
     months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    fig = go.Figure(go.Bar(
+    overall_avg = h["attendance_count"].mean()
+
+    # Color bars by deviation from overall average: above-avg = bronze-bright,
+    # near-avg = bronze-dim, below-avg = burgundy. Subtle but readable.
+    colors = []
+    for v in avg.values:
+        if pd.isna(v):
+            colors.append("rgba(224,224,224,0.05)")
+        elif v >= overall_avg + 1:
+            colors.append(BRONZE_BRIGHT)
+        elif v <= overall_avg - 1:
+            colors.append(BURGUNDY_GLOW)
+        else:
+            colors.append(BRONZE_DIM)
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
         x=months, y=avg.values,
-        marker=dict(color=BRONZE, line=dict(color=BURGUNDY, width=1)),
-        hovertemplate="%{x}<br>Avg: %{y:.1f} players<extra></extra>",
+        marker=dict(color=colors, line=dict(color="rgba(224,224,224,0.12)", width=0.6)),
+        hovertemplate="<b>%{x}</b><br>Avg: %{y:.1f} players<extra></extra>",
     ))
-    fig.update_layout(**_layout(height=300, margin=dict(l=20, r=20, t=20, b=30)))
+    # Horizontal reference line at the all-time average
+    fig.add_shape(
+        type="line",
+        x0=-0.5, x1=11.5, y0=overall_avg, y1=overall_avg,
+        line=dict(color=SILVER_DIM, width=1, dash="dot"),
+    )
+    fig.add_annotation(
+        x=11.5, y=overall_avg, xanchor="right", yanchor="bottom",
+        text=f"All-time avg: {overall_avg:.1f}",
+        showarrow=False,
+        font=dict(color=SILVER_DIM, size=10),
+    )
+    fig.update_layout(**_layout(
+        height=320, margin=dict(l=20, r=20, t=20, b=40),
+        xaxis=dict(
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            tickfont=dict(color=SILVER_DIM, size=11), showgrid=False, ticks="",
+        ),
+        yaxis=dict(
+            title=dict(text="Average players that night", font=dict(color=SILVER_DIM, size=11)),
+            gridcolor="rgba(224,224,224,0.06)",
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            tickfont=dict(color=SILVER_DIM, size=11),
+            rangemode="tozero",
+        ),
+        showlegend=False,
+        bargap=0.22,
+    ))
     return fig
 
 
 def _gap_vs_attendance_chart(history: pd.DataFrame) -> go.Figure | None:
+    """Gap (days since last event) vs attendance. Caps the x-axis at 60 days
+    so the main cloud is readable; any far-out hiatus is shown as an
+    annotated "off-axis" outlier instead of crushing the rest of the chart."""
     if "days_since_last_event" not in history.columns:
         return None
     h = history.dropna(subset=["days_since_last_event"]).copy()
     if h.empty:
         return None
+    X_CAP = 60  # days. Beyond this, gaps are flagged as off-axis outliers.
+    main = h[h["days_since_last_event"] <= X_CAP].copy()
+    outliers = h[h["days_since_last_event"] > X_CAP].copy()
+
     fig = go.Figure()
+    # Main cloud of events with normal-length gaps
     fig.add_trace(go.Scatter(
-        x=h["days_since_last_event"], y=h["attendance_count"],
-        mode="markers", name="Events",
-        marker=dict(color=BRONZE, size=9, opacity=0.75, line=dict(color=BURGUNDY, width=0.8)),
-        hovertemplate="Gap: %{x} days<br>Attendance: %{y:.0f}<extra></extra>",
+        x=main["days_since_last_event"], y=main["attendance_count"],
+        mode="markers", name="Bracket nights",
+        marker=dict(
+            color=BRONZE_BRIGHT, size=11, opacity=0.55,
+            line=dict(color=BURGUNDY, width=1.2),
+        ),
+        customdata=main["event_date"].dt.strftime("%b %d, %Y"),
+        hovertemplate=(
+            "<b>%{customdata}</b><br>"
+            "Gap from previous night: %{x:.0f} days<br>"
+            "Attendance: %{y:.0f} players"
+            "<extra></extra>"
+        ),
     ))
+
+    # Empirical least-squares trend on the in-range data
+    if len(main) >= 2:
+        slope, intercept = np.polyfit(
+            main["days_since_last_event"].to_numpy(),
+            main["attendance_count"].to_numpy(),
+            1,
+        )
+        fit_x = np.linspace(
+            main["days_since_last_event"].min(),
+            main["days_since_last_event"].max(),
+            40,
+        )
+        fit_y = slope * fit_x + intercept
+        fig.add_trace(go.Scatter(
+            x=fit_x, y=fit_y,
+            mode="lines", name="Empirical trend",
+            line=dict(color=BRONZE, width=2.4, dash="dot"),
+            hoverinfo="skip",
+        ))
+
+    # Plot any outliers near the right edge (inside the visible range) so the
+    # axis still scales nicely, and annotate them.
+    if not outliers.empty:
+        # Project outliers onto x = X_CAP - 2 with a triangle marker so they
+        # stay visible but the user can see they're not real positions.
+        for _, row in outliers.iterrows():
+            label = (
+                f"{row['event_date']:%b %d, %Y} - "
+                f"{int(row['days_since_last_event'])}-day hiatus before this night"
+            )
+            fig.add_trace(go.Scatter(
+                x=[X_CAP - 1.5], y=[row["attendance_count"]],
+                mode="markers", name="Long-hiatus event",
+                marker=dict(
+                    color=BURGUNDY_GLOW, size=14, symbol="triangle-left",
+                    line=dict(color=BRONZE_BRIGHT, width=1.5),
+                ),
+                hovertemplate=f"<b>{label}</b><br>Attendance: %{{y:.0f}} players<extra></extra>",
+                showlegend=False,
+            ))
+        fig.add_annotation(
+            x=X_CAP - 1.5, y=outliers["attendance_count"].max(),
+            text=(
+                f"{len(outliers)} event(s) after a hiatus "
+                f"of {int(outliers['days_since_last_event'].max())}+ days "
+                "(shown at axis edge)"
+            ),
+            showarrow=True, arrowhead=2, ax=-70, ay=-30,
+            arrowcolor=BRONZE_DIM,
+            font=dict(color=SILVER_DIM, size=10),
+            bgcolor="rgba(3, 17, 13, 0.7)",
+            bordercolor=BRONZE_DIM, borderwidth=1, borderpad=4,
+        )
+
     fig.update_layout(**_layout(
-        height=320, margin=dict(l=20, r=20, t=20, b=40),
-        xaxis=dict(title="Days since the previous bracket night",
-                   color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)", showgrid=False),
-        yaxis=dict(title="Players that night",
-                   color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
-                   gridcolor="rgba(224,224,224,0.06)"),
+        height=340, margin=dict(l=20, r=20, t=20, b=46),
+        xaxis=dict(
+            title=dict(text="Days since the previous bracket night", font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            tickfont=dict(color=SILVER_DIM, size=11),
+            showgrid=False, zeroline=False, range=[0, X_CAP],
+        ),
+        yaxis=dict(
+            title=dict(text="Players that night", font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            gridcolor="rgba(224,224,224,0.06)",
+            tickfont=dict(color=SILVER_DIM, size=11), zeroline=False,
+            rangemode="tozero",
+        ),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+            bgcolor="rgba(0,0,0,0)", font=dict(color=SILVER_DIM, size=11),
+        ),
+    ))
+    return fig
+
+
+def _two_bucket_box(
+    history: pd.DataFrame,
+    flag_col: str,
+    true_label: str,
+    false_label: str,
+    y_title: str = "Players that night",
+) -> go.Figure | None:
+    """Reusable two-bucket box plot helper. The 'baseline' bucket is bronze;
+    the 'special-case' bucket is burgundy. Each box shows the median, the
+    quartile range, and individual points jittered for visibility."""
+    if flag_col not in history.columns or history[flag_col].dropna().empty:
+        return None
+    h = history.dropna(subset=[flag_col]).copy()
+    h["bucket"] = np.where(h[flag_col] >= 0.5, true_label, false_label)
+    fig = go.Figure()
+    bucket_colors = {
+        false_label: (BRONZE_BRIGHT, "rgba(163, 133, 96, 0.18)"),
+        true_label: (BURGUNDY_GLOW, "rgba(90, 17, 36, 0.30)"),
+    }
+    for label in [false_label, true_label]:
+        sub = h[h["bucket"] == label]
+        if sub.empty:
+            continue
+        line_color, fill_color = bucket_colors[label]
+        fig.add_trace(go.Box(
+            y=sub["attendance_count"], name=f"{label}  ·  {len(sub)} nights",
+            marker=dict(color=line_color, size=6, opacity=0.7,
+                        line=dict(color=BURGUNDY, width=0.8)),
+            line=dict(color=line_color, width=1.5),
+            fillcolor=fill_color,
+            boxmean=True, boxpoints="all", jitter=0.5, pointpos=0,
+            hovertemplate="Players: %{y:.0f}<extra>" + label + "</extra>",
+        ))
+    fig.update_layout(**_layout(
+        height=340, margin=dict(l=20, r=20, t=20, b=40),
+        xaxis=dict(
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            tickfont=dict(color=SILVER, size=12),
+            showgrid=False, ticks="",
+        ),
+        yaxis=dict(
+            title=dict(text=y_title, font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            gridcolor="rgba(224,224,224,0.06)",
+            tickfont=dict(color=SILVER_DIM, size=11),
+            rangemode="tozero", zeroline=False,
+        ),
+        showlegend=False,
     ))
     return fig
 
 
 def _rain_compare_chart(history: pd.DataFrame) -> go.Figure | None:
-    if "rain_indicator" not in history.columns or history["rain_indicator"].dropna().empty:
-        return None
-    h = history.dropna(subset=["rain_indicator"]).copy()
-    h["bucket"] = np.where(h["rain_indicator"] >= 0.5, "Rainy night", "Dry night")
-    fig = go.Figure()
-    for label, color in [("Dry night", BRONZE_BRIGHT), ("Rainy night", BURGUNDY_GLOW)]:
-        sub = h[h["bucket"] == label]
-        if sub.empty:
-            continue
-        fig.add_trace(go.Box(
-            y=sub["attendance_count"], name=f"{label} (n={len(sub)})",
-            marker=dict(color=color), line=dict(color=color),
-            fillcolor="rgba(163, 133, 96, 0.18)" if label == "Dry night" else "rgba(90, 17, 36, 0.32)",
-            boxmean=True, boxpoints="all", jitter=0.4, pointpos=0,
-        ))
-    fig.update_layout(**_layout(
-        height=320, margin=dict(l=20, r=20, t=20, b=30),
-        yaxis=dict(title="Players that night",
-                   color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
-                   gridcolor="rgba(224,224,224,0.06)"),
-    ))
-    return fig
-
-
-def _temp_vs_attendance_chart(history: pd.DataFrame) -> go.Figure | None:
-    if "temperature_high" not in history.columns or history["temperature_high"].dropna().empty:
-        return None
-    h = history.dropna(subset=["temperature_high"]).copy()
-    # show in °F for readers
-    h["temp_high_f"] = h["temperature_high"] * 9.0 / 5.0 + 32.0
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=h["temp_high_f"], y=h["attendance_count"],
-        mode="markers", name="Events",
-        marker=dict(color=BRONZE, size=9, opacity=0.75, line=dict(color=BURGUNDY, width=0.8)),
-        hovertemplate="High: %{x:.0f} °F<br>Attendance: %{y:.0f}<extra></extra>",
-    ))
-    fig.update_layout(**_layout(
-        height=320, margin=dict(l=20, r=20, t=20, b=40),
-        xaxis=dict(title="Daytime high temperature (°F)",
-                   color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)", showgrid=False),
-        yaxis=dict(title="Players that night",
-                   color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
-                   gridcolor="rgba(224,224,224,0.06)"),
-    ))
-    return fig
+    return _two_bucket_box(history, "rain_indicator", "Rainy night", "Dry night")
 
 
 def _holiday_compare_chart(history: pd.DataFrame) -> go.Figure | None:
-    if "is_holiday_week" not in history.columns or history["is_holiday_week"].dropna().empty:
+    return _two_bucket_box(history, "is_holiday_week", "Holiday-week night", "Regular-week night")
+
+
+def _temp_vs_attendance_chart(history: pd.DataFrame) -> go.Figure | None:
+    """Daytime high vs attendance scatter for Bradenton. Adds a smooth
+    least-squares trend so the relationship reads at a glance even when the
+    point cloud is busy."""
+    if "temperature_high" not in history.columns or history["temperature_high"].dropna().empty:
         return None
-    h = history.dropna(subset=["is_holiday_week"]).copy()
-    h["bucket"] = np.where(h["is_holiday_week"] >= 0.5, "Near a holiday", "Regular week")
+    h = history.dropna(subset=["temperature_high"]).copy()
+    h["temp_high_f"] = h["temperature_high"] * 9.0 / 5.0 + 32.0
+
+    x_arr = h["temp_high_f"].to_numpy()
+    y_arr = h["attendance_count"].to_numpy()
+    slope, intercept = np.polyfit(x_arr, y_arr, 1)
+    fit_x = np.linspace(x_arr.min(), x_arr.max(), 40)
+    fit_y = slope * fit_x + intercept
+
     fig = go.Figure()
-    for label, color in [("Regular week", BRONZE_BRIGHT), ("Near a holiday", BURGUNDY_GLOW)]:
-        sub = h[h["bucket"] == label]
-        if sub.empty:
-            continue
-        fig.add_trace(go.Box(
-            y=sub["attendance_count"], name=f"{label} (n={len(sub)})",
-            marker=dict(color=color), line=dict(color=color),
-            fillcolor="rgba(163, 133, 96, 0.18)" if label == "Regular week" else "rgba(90, 17, 36, 0.32)",
-            boxmean=True, boxpoints="all", jitter=0.4, pointpos=0,
-        ))
+    fig.add_trace(go.Scatter(
+        x=fit_x, y=fit_y,
+        mode="lines", name="Empirical trend",
+        line=dict(color=BRONZE, width=2.4, dash="dot"),
+        hoverinfo="skip",
+    ))
+    fig.add_trace(go.Scatter(
+        x=h["temp_high_f"], y=h["attendance_count"],
+        mode="markers", name="Bracket nights",
+        marker=dict(
+            color=BRONZE_BRIGHT, size=11, opacity=0.55,
+            line=dict(color=BURGUNDY, width=1.2),
+        ),
+        customdata=h["event_date"].dt.strftime("%b %d, %Y"),
+        hovertemplate=(
+            "<b>%{customdata}</b><br>"
+            "Daytime high: %{x:.0f} °F<br>"
+            "Attendance: %{y:.0f} players"
+            "<extra></extra>"
+        ),
+    ))
     fig.update_layout(**_layout(
-        height=320, margin=dict(l=20, r=20, t=20, b=30),
-        yaxis=dict(title="Players that night",
-                   color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
-                   gridcolor="rgba(224,224,224,0.06)"),
+        height=340, margin=dict(l=20, r=20, t=20, b=44),
+        xaxis=dict(
+            title=dict(text="Daytime high temperature (°F)",
+                       font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)", showgrid=False,
+            tickfont=dict(color=SILVER_DIM, size=11), zeroline=False,
+        ),
+        yaxis=dict(
+            title=dict(text="Players that night", font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            gridcolor="rgba(224,224,224,0.06)",
+            tickfont=dict(color=SILVER_DIM, size=11),
+            rangemode="tozero", zeroline=False,
+        ),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+            bgcolor="rgba(0,0,0,0)", font=dict(color=SILVER_DIM, size=11),
+        ),
     ))
     return fig
 
 
 def _players_over_time_chart(history: pd.DataFrame) -> go.Figure | None:
+    """Two clean line series instead of a stacked area:
+      - returning players (bronze, the "club rhythm" signal)
+      - new players      (burgundy, the "club growth" signal)
+    Each is its own readable curve. Total attendance is shown as a faint
+    silver reference behind them so the user can see what fraction is each.
+    """
     if not {"returning_players_count", "new_players_count"}.issubset(history.columns):
         return None
     h = history.sort_values("event_date").copy()
     fig = go.Figure()
+    # Total attendance reference (light, behind the two main series)
+    fig.add_trace(go.Scatter(
+        x=h["event_date"], y=h["attendance_count"],
+        mode="lines", name="Total that night",
+        line=dict(color="rgba(224,224,224,0.18)", width=4),
+        hoverinfo="skip",
+    ))
     fig.add_trace(go.Scatter(
         x=h["event_date"], y=h["returning_players_count"],
-        mode="lines+markers", name="Returning players",
-        line=dict(color=BRONZE, width=2.2),
+        mode="lines+markers", name="Returning players (club rhythm)",
+        line=dict(color=BRONZE, width=2.6),
         marker=dict(size=6, color=BRONZE, line=dict(color=DEEP_GREEN, width=1)),
-        stackgroup="one",
+        hovertemplate="<b>%{x|%b %d, %Y}</b><br>Returning: %{y:.0f}<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=h["event_date"], y=h["new_players_count"],
-        mode="lines+markers", name="New players",
-        line=dict(color=BURGUNDY_GLOW, width=2.2),
+        mode="lines+markers", name="New players (club growth)",
+        line=dict(color=BURGUNDY_GLOW, width=2.4),
         marker=dict(size=6, color=BURGUNDY_GLOW, line=dict(color=DEEP_GREEN, width=1)),
-        stackgroup="one",
+        hovertemplate="<b>%{x|%b %d, %Y}</b><br>New: %{y:.0f}<extra></extra>",
     ))
     fig.update_layout(**_layout(
-        height=360, margin=dict(l=20, r=20, t=20, b=30),
-        yaxis=dict(title="Players that night",
-                   color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
-                   gridcolor="rgba(224,224,224,0.06)"),
+        height=360, margin=dict(l=20, r=20, t=20, b=44),
+        xaxis=dict(
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            tickfont=dict(color=SILVER_DIM, size=11),
+            showgrid=False, ticks="",
+            tickformatstops=[
+                dict(dtickrange=[None, 86400000 * 90], value="%b %Y"),
+                dict(dtickrange=[86400000 * 90, None], value="%Y"),
+            ],
+        ),
+        yaxis=dict(
+            title=dict(text="Players that night", font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            gridcolor="rgba(224,224,224,0.06)",
+            tickfont=dict(color=SILVER_DIM, size=11),
+            rangemode="tozero",
+        ),
     ))
     return fig
 
 
 def _games_per_player_chart(history: pd.DataFrame) -> go.Figure | None:
+    """Games-per-player over time with a faint horizontal reference at the
+    all-time mean. Makes "above or below typical" obvious at a glance."""
     if "games_per_player" not in history.columns:
         return None
     h = history.sort_values("event_date").copy()
+    mean_gpp = float(h["games_per_player"].mean())
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=h["event_date"], y=h["games_per_player"],
         mode="lines+markers", name="Games per player",
-        line=dict(color=BRONZE_BRIGHT, width=2.4),
+        line=dict(color=BRONZE_BRIGHT, width=2.6, shape="spline", smoothing=0.5),
         marker=dict(size=5, color=BRONZE_BRIGHT, line=dict(color=DEEP_GREEN, width=1)),
+        hovertemplate="<b>%{x|%b %d, %Y}</b><br>%{y:.2f} games/player<extra></extra>",
     ))
+    fig.add_shape(
+        type="line",
+        x0=h["event_date"].min(), x1=h["event_date"].max(),
+        y0=mean_gpp, y1=mean_gpp,
+        line=dict(color=SILVER_DIM, width=1, dash="dot"),
+    )
+    fig.add_annotation(
+        x=h["event_date"].max(), y=mean_gpp,
+        xanchor="right", yanchor="bottom",
+        text=f"All-time avg: {mean_gpp:.2f} games/player",
+        showarrow=False,
+        font=dict(color=SILVER_DIM, size=10),
+    )
     fig.update_layout(**_layout(
-        height=300, margin=dict(l=20, r=20, t=20, b=30),
-        yaxis=dict(title="Games per player",
-                   color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
-                   gridcolor="rgba(224,224,224,0.06)"),
+        height=320, margin=dict(l=20, r=20, t=20, b=40),
+        xaxis=dict(
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            tickfont=dict(color=SILVER_DIM, size=11),
+            showgrid=False, ticks="",
+            tickformatstops=[
+                dict(dtickrange=[None, 86400000 * 90], value="%b %Y"),
+                dict(dtickrange=[86400000 * 90, None], value="%Y"),
+            ],
+        ),
+        yaxis=dict(
+            title=dict(text="Games per player", font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            gridcolor="rgba(224,224,224,0.06)",
+            tickfont=dict(color=SILVER_DIM, size=11),
+            rangemode="tozero",
+        ),
+        showlegend=False,
     ))
     return fig
 
@@ -1121,9 +1515,12 @@ def _tab_calendar(history: pd.DataFrame) -> None:
 
 def _tab_weather(history: pd.DataFrame) -> None:
     _explain(
-        "<b>Kava Social is a physical venue.</b> Florida weather &mdash; especially "
-        "rain, storms, and unusual heat or cold &mdash; can change whether people leave "
-        "the house to come play. This tab shows how attendance has moved with weather."
+        "<b>Kava Social is a physical venue and bracket nights tip off at "
+        f"{EVENT_START_TIME}.</b> Florida weather &mdash; especially rain, storms, "
+        "and unusual heat or cold &mdash; can change whether people leave the "
+        "house to come play. The weather features used by the model describe the "
+        "<i>day</i> of the bracket night (Bradenton, FL); the live forecast is "
+        "pulled from Open-Meteo at request time."
     )
     rain_fig = _rain_compare_chart(history)
     temp_fig = _temp_vs_attendance_chart(history)
