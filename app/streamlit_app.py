@@ -499,9 +499,15 @@ def _explain(html: str) -> None:
     st.markdown(f'<div class="kc-explain">{html}</div>', unsafe_allow_html=True)
 
 
-def _chart_panel(eyebrow: str, fig: go.Figure, caption: str | None = None) -> None:
+def _chart_panel(eyebrow: str, fig: go.Figure, caption: str | None = None, key: str | None = None) -> None:
+    # Streamlit 1.39+ auto-generates element IDs from chart content+config;
+    # when the same figure is rendered in two tabs (e.g. the trend chart in
+    # both Summary and Attendance Momentum) we hit StreamlitDuplicateElementId.
+    # We use the eyebrow as a natural unique key per panel.
+    if key is None:
+        key = "chart_" + "".join(c if c.isalnum() else "_" for c in eyebrow.lower())
     st.markdown(f'<div class="kc-chart-panel"><h4>{eyebrow}</h4>', unsafe_allow_html=True)
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key=key)
     if caption:
         st.markdown(f'<div class="kc-chart-caption">{caption}</div>', unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
