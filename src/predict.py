@@ -202,10 +202,22 @@ def build_feature_row(target_date: date, history: pd.DataFrame, metadata: dict) 
 
     feature_columns = metadata["feature_columns"]
     medians = metadata["feature_medians"]
-    # Build the input frame; only the columns the trained model expects.
-    # Missing column names (e.g. when rolling out a new model) are tolerated
-    # by reindexing to the model's expected columns.
-    X = pd.DataFrame([row]).reindex(columns=feature_columns)
+
+    # Build the input frame defensively. When the deployed metadata.json was
+    # produced by a newer training run than the predict.py currently running
+    # (or vice-versa - common during a Streamlit Cloud rebuild window), any
+    # feature columns missing from `row` are filled with the metadata's
+    # training-set median. This means we never raise KeyError no matter which
+    # combination of model + code happens to be live.
+    row_filled = {}
+    for col in feature_columns:
+        if col in row:
+            row_filled[col] = row[col]
+        elif col in medians:
+            row_filled[col] = medians[col]
+        else:
+            row_filled[col] = np.nan
+    X = pd.DataFrame([row_filled])[feature_columns]
     X = X.fillna(pd.Series(medians))
     return X
 
