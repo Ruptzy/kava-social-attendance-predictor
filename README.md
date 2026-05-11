@@ -1,12 +1,14 @@
-# Kava Social Chess Attendance Predictor
+# Kava Chess Clock
+
+### Attendance Forecasting for Kava Social Chess Club
 
 **Project 2 — Distributed Systems for Data Science · New College of Florida · Spring 2026**
 
 A complete distributed data pipeline that predicts **turnout** for Kava Social
 chess bracket nights in Bradenton, FL. The end product is a public web app
 where a user picks a future bracket date and gets back a predicted number of
-attendees, a high/normal/low turnout label, a confidence gauge, and a planning
-note for the organizer.
+attendees, a high/normal/low turnout label, a confidence indicator, and a
+planning note for the organizer.
 
 This is **not** a chess engine, opening predictor, or rating model. It is a
 small, honest tool for the people who run the bracket to plan boards,
@@ -190,12 +192,20 @@ we're predicting) is **never** used as a model input. Only:
 The classifier's "high vs low" threshold is the historical median attendance
 computed once over the gold table — see `models/metadata.json`.
 
-## Evaluation metrics (reported by `train_model.py`)
+## Model bake-off & evaluation
 
-- **Regression head:** 4-fold time-series-CV MAE and RMSE (printed and logged to MLflow).
-- **Classification head:** 4-fold time-series-CV Accuracy and F1, plus train AUC.
+`train_model.py` compares four candidates head-to-head:
 
-Exact values are in `models/metadata.json` and in the MLflow runs under `mlruns/`.
+| Model | Holdout MAE (last 14 events) | Notes |
+| --- | --- | --- |
+| Naive (last event) | 3.43 players | Always predicts the previous night's count. The baseline to beat. |
+| Ridge Regression | 5.01 players | Simple interpretable linear model — too rigid for this signal. |
+| **Random Forest** | **2.32 players** ✅ | Non-linear tree ensemble. **Selected.** |
+| Gradient Boosting | 2.51 players | Strong second place. |
+
+All runs are tracked in MLflow under `./mlruns/`. The classifier (for the
+"high turnout" label) is kept as a Random Forest. Exact values live in
+`models/metadata.json`.
 
 ## Credentials
 

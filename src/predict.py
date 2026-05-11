@@ -70,7 +70,12 @@ def _maybe_fetch_weather(target: date) -> dict:
 
 def load_models():
     metadata = json.loads((MODELS_DIR / "metadata.json").read_text())
-    reg = joblib.load(MODELS_DIR / "rf_attendance_regressor.joblib")
+    # Prefer the new neutral-name artifact (saved by the multi-model bake-off);
+    # fall back to the legacy RF filename so older deploys keep working.
+    reg_path = MODELS_DIR / "attendance_regressor.joblib"
+    if not reg_path.exists():
+        reg_path = MODELS_DIR / "rf_attendance_regressor.joblib"
+    reg = joblib.load(reg_path)
     clf = joblib.load(MODELS_DIR / "rf_high_turnout_classifier.joblib")
     history = pd.read_parquet(MODELS_DIR / "event_history.parquet")
     history["event_date"] = pd.to_datetime(history["event_date"]).dt.normalize()
