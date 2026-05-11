@@ -1312,7 +1312,8 @@ def _two_bucket_box(
 
 
 def _holiday_compare_chart(history: pd.DataFrame) -> go.Figure | None:
-    return _two_bucket_box(history, "is_holiday_week", "Holiday-week night", "Regular-week night")
+    # Plain x-axis labels so the chart reads at a glance.
+    return _two_bucket_box(history, "is_holiday_week", "Near holiday", "Regular week")
 
 
 def _humidity_vs_attendance_chart(history: pd.DataFrame) -> go.Figure | None:
@@ -1709,10 +1710,61 @@ def _tab_calendar(history: pd.DataFrame) -> None:
 
     holiday_fig = _holiday_compare_chart(history)
     if holiday_fig is not None:
+        # Compute the actual counts so the helper text doesn't drift from the data.
+        h_flag = history["is_holiday_week"].fillna(0).astype(int)
+        n_holiday = int(h_flag.sum())
+        n_regular = int(len(h_flag) - n_holiday)
+
+        # Plain-language framing BEFORE the chart so the user knows what they're
+        # about to see.
+        st.markdown(
+            f"""
+            <div class="kc-explain" style="margin-top:0.6rem;">
+              <b>Do holiday weeks change turnout?</b><br>
+              Holiday-week nights are bracket nights that occurred close to a major
+              U.S. federal holiday (within three days either side). Regular-week
+              nights are all other bracket nights.<br><br>
+              In this dataset: <b>{n_regular} regular-week nights</b> and
+              <b>{n_holiday} holiday-week nights</b>.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
         _chart_panel(
-            "Holiday week vs regular week",
+            "Do holiday weeks change turnout?",
             holiday_fig,
-            "Box plots show the spread of attendance for each bucket. A flatter box around a lower median for holiday weeks suggests holidays pull turnout down.",
+            "The box shows the middle range of attendance; the line inside the "
+            "box is the median; dots show each individual bracket night.",
+        )
+
+        # Honest holiday list + takeaway AFTER the chart.
+        st.markdown(
+            """
+            <div class="kc-notes-card" style="margin-bottom:0.6rem;">
+              <h5>Holidays included</h5>
+              <p style="margin:0; color:var(--kc-silver-dim); font-size:0.88rem; line-height:1.55;">
+                The holiday flag fires within 3 days of any of these
+                U.S. federal holidays (from the <code>holidays</code> Python
+                library): New Year's Day, Martin Luther King Jr. Day,
+                Presidents' Day (Washington's Birthday), Memorial Day,
+                Juneteenth, Independence Day, Labor Day, Columbus Day,
+                Veterans Day, Thanksgiving Day, and Christmas Day.<br><br>
+                Easter / Spring Break and the summer / winter school breaks
+                are <i>not</i> tracked by this flag; they're handled by a
+                separate "school break" feature in the model.
+              </p>
+            </div>
+            <div class="kc-trust" style="margin-top:0.4rem;">
+              <b>Takeaway.</b> Regular weeks and holiday weeks look fairly
+              similar overall, but holiday-week nights appear slightly less
+              predictable. Because there are far fewer holiday-week events,
+              the holiday flag should be treated as a <i>planning signal</i>,
+              not a hard rule &mdash; it may add scheduling uncertainty rather
+              than reliably push attendance up or down.
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
 
