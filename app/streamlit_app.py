@@ -2150,7 +2150,49 @@ def main() -> None:
     try:
         pred = predict_for_date(target_date, weather_override=weather_override)
     except TypeError:
+        # Older predict.py without the weather_override kwarg
         pred = predict_for_date(target_date)
+    except Exception as e:  # pragma: no cover - defensive shell
+        # Belt-and-suspenders: if anything else goes wrong (e.g. a Cloud
+        # deploy momentarily serves a stale build), don't crash the whole
+        # dashboard. Show a non-fatal warning and fall back to the running
+        # mean of recent attendance as a placeholder forecast.
+        st.warning(
+            "The model is still warming up after a recent deploy. Showing a "
+            "rough fallback forecast for now — refresh in 30 seconds and the "
+            "full model output will return."
+        )
+        from dataclasses import dataclass as _dc
+        from datetime import date as _date
+
+        @_dc
+        class _StubPred:
+            event_date: str
+            predicted_attendance: float
+            predicted_attendance_rounded: int
+            high_turnout_probability: float
+            turnout_category: str
+            median_attendance_threshold: float
+            planning_note: str
+            features_used: dict
+            model_metadata: dict
+
+        rec = float(history["attendance_count"].tail(3).mean())
+        med = float(history["attendance_count"].median())
+        pred = _StubPred(
+            event_date=str(target_date),
+            predicted_attendance=rec,
+            predicted_attendance_rounded=int(round(rec)),
+            high_turnout_probability=0.5,
+            turnout_category="Normal",
+            median_attendance_threshold=med,
+            planning_note=(
+                f"Fallback estimate based on the last 3 nights ({rec:.1f} avg). "
+                "Refresh once the model finishes redeploying."
+            ),
+            features_used={},
+            model_metadata=metadata or {},
+        )
 
     _section_header("Forecast", "Forecast summary")
     _forecast_summary(pred)

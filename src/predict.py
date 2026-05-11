@@ -46,7 +46,10 @@ def _season(month: int) -> str:
 
 def _maybe_fetch_weather(target: date) -> dict:
     """Try to pull weather for the target date from Open-Meteo. Returns empty
-    dict if we can't reach the network - the model will fall back to medians."""
+    dict if we can't reach the network - the model will fall back to medians.
+
+    Always returns a plain Python dict (or {}). Never a DataFrame or Series.
+    """
     try:
         from src.weather import fetch_weather_for_dates  # type: ignore
     except Exception:
@@ -58,14 +61,21 @@ def _maybe_fetch_weather(target: date) -> dict:
         df = fetch_weather_for_dates([target])
     except Exception:
         return {}
-    if df.empty:
+    try:
+        if df is None or len(df) == 0:
+            return {}
+        df = df.copy()
+        df["event_date"] = pd.to_datetime(df["event_date"]).dt.normalize()
+        match = df.loc[df["event_date"] == pd.Timestamp(target)]
+        if match.empty:
+            return {}
+        out = match.iloc[0].to_dict()
+        # Defensive: ensure we really did return a dict.
+        if not isinstance(out, dict):
+            return {}
+        return out
+    except Exception:
         return {}
-    df["event_date"] = pd.to_datetime(df["event_date"]).dt.normalize()
-    row = df.loc[df["event_date"] == pd.Timestamp(target)]
-    if row.empty:
-        return {}
-    row = row.iloc[0].to_dict()
-    return row
 
 
 def load_models():
@@ -200,24 +210,28 @@ def build_feature_row(target_date: date, history: pd.DataFrame, metadata: dict) 
         "weather_discomfort_score": weather.get("weather_discomfort_score", np.nan),
     }
 
-    feature_columns = metadata["feature_columns"]
-    medians = metadata["feature_medians"]
+    feature_columns = list(metadata["feature_columns"])
+    medians = dict(metadata["feature_medians"])
 
-    # Build the input frame defensively. When the deployed metadata.json was
-    # produced by a newer training run than the predict.py currently running
-    # (or vice-versa - common during a Streamlit Cloud rebuild window), any
-    # feature columns missing from `row` are filled with the metadata's
-    # training-set median. This means we never raise KeyError no matter which
-    # combination of model + code happens to be live.
-    row_filled = {}
+    # Build the input frame defensively. The columns are set up FRONT from
+    # feature_columns, so the resulting DataFrame is guaranteed to have
+    # exactly the columns the model expects, no matter what `row` or
+    # `medians` happen to contain. We then fill each cell from row > median > NaN.
+    # This survives any metadata / code skew that can happen during a
+    # Streamlit Cloud rebuild.
+    X = pd.DataFrame(index=[0], columns=feature_columns, dtype=float)
     for col in feature_columns:
-        if col in row:
-            row_filled[col] = row[col]
-        elif col in medians:
-            row_filled[col] = medians[col]
-        else:
-            row_filled[col] = np.nan
-    X = pd.DataFrame([row_filled])[feature_columns]
+        val = None
+        if isinstance(row, dict) and col in row:
+            v = row[col]
+            if v is not None and not (isinstance(v, float) and pd.isna(v)):
+                val = v
+        if val is None and col in medians and medians[col] is not None:
+            val = medians[col]
+        if val is None:
+            val = np.nan
+        X.at[0, col] = val
+    # Final pass: fill any remaining NaNs with medians where available.
     X = X.fillna(pd.Series(medians))
     return X
 
