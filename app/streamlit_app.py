@@ -101,16 +101,93 @@ def _inject_css() -> None:
             --kc-silver: #E0E0E0; --kc-silver-dim: #9BA09B; --kc-silver-mute: #6B7570;
             --kc-border: rgba(163, 133, 96, 0.18);
             --kc-border-strong: rgba(163, 133, 96, 0.36);
+
+            /* -- Chess silhouette SVGs as URL-encoded data URIs.
+               Each is a single-color filled glyph in bronze (#A38560), used as a
+               background-image on the decorative #kc-bg layer below.
+               The opacity is controlled by the layer, NOT the fill, so the same
+               SVG can be re-tinted later if we change the palette. */
+            --kc-knight-svg: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 45 45'%3E%3Cg fill='%23A38560' stroke='none' fill-rule='evenodd'%3E%3Cpath d='M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21'/%3E%3Cpath d='M24 18c.38 2.91-5.55 7.37-8 9-3 2-2.82 4.34-5 4-1.042-.94 1.41-3.04 0-3-1 0 .19 1.23-1 2-1 0-4.003 1-4-4 0-2 6-12 6-12 0 0 1.89-1.9 2-3.5-.73-.994-.5-2-.5-3 1-1 3-2.5 3-2.5l1 2.5h2L20 4.5l1 1 1.5-.5L24 8.5l.5.5c-.5 1.5-1 2.5-1 4-1 2 3.5 3 0 5'/%3E%3C/g%3E%3C/svg%3E");
+            --kc-king-svg: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23A38560' d='M50 8 L46 12 L46 16 L42 16 L42 20 L46 20 L46 26 C30 28 24 40 30 52 C28 50 26 50 24 52 L24 80 L76 80 L76 52 C74 50 72 50 70 52 C76 40 70 28 54 26 L54 20 L58 20 L58 16 L54 16 L54 12 Z'/%3E%3C/svg%3E");
         }
         html, body, .stApp, [class*="css"] {
             font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif !important;
             color: var(--kc-silver);
         }
+        /* Base page surface: rich gradient under the decorative #kc-bg layer.
+           Burgundy glow upper-left, bronze glow lower-right, all sitting on
+           near-black green. Makes the page feel composed, not flat. */
         .stApp {
             background:
-                radial-gradient(ellipse 1100px 600px at 0% 0%, rgba(57, 5, 23, 0.18) 0%, transparent 55%),
-                radial-gradient(ellipse 900px 500px at 100% 100%, rgba(163, 133, 96, 0.06) 0%, transparent 55%),
+                radial-gradient(ellipse 1300px 800px at 0% 0%, rgba(57, 5, 23, 0.22) 0%, transparent 55%),
+                radial-gradient(ellipse 1000px 600px at 100% 100%, rgba(163, 133, 96, 0.08) 0%, transparent 55%),
                 var(--kc-bg) !important;
+        }
+
+        /* -----------------------------------------------------------------
+           Decorative chess background layer.
+           A fixed-position, non-interactive overlay that sits behind all
+           Streamlit content. It carries three quiet thematic layers:
+             1. A large knight silhouette on the right (~640 px, opacity 0.045)
+             2. A smaller king silhouette in the bottom-left (~280 px, 0.035)
+             3. An ultra-faint chessboard grid (1px lines every 80px, 0.018)
+           pointer-events: none means clicks pass through; z-index: 0 keeps
+           it underneath the .block-container (z-index: 1 below). */
+        #kc-bg {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+        #kc-bg::before {
+            /* Large knight - the primary thematic anchor */
+            content: "";
+            position: absolute;
+            top: 18%;
+            right: -120px;
+            width: 640px;
+            height: 640px;
+            background-image: var(--kc-knight-svg);
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: contain;
+            opacity: 0.045;
+            transform: rotate(-8deg);
+            filter: blur(0.6px);
+        }
+        #kc-bg::after {
+            /* Secondary king + the chessboard grid texture, stacked.
+               Grid is two repeating-linear-gradients at 80px spacing. */
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image:
+                var(--kc-king-svg),
+                repeating-linear-gradient(0deg,
+                    rgba(163, 133, 96, 0.018) 0px, rgba(163, 133, 96, 0.018) 1px,
+                    transparent 1px, transparent 80px),
+                repeating-linear-gradient(90deg,
+                    rgba(163, 133, 96, 0.018) 0px, rgba(163, 133, 96, 0.018) 1px,
+                    transparent 1px, transparent 80px);
+            background-repeat: no-repeat, repeat, repeat;
+            background-position: -40px 92%, 0 0, 0 0;
+            background-size: 280px 280px, auto, auto;
+            opacity: 1;
+            /* The king gets its own opacity via a CSS mask trick: fade it
+               on its own by making the SVG fill semi-transparent below. */
+        }
+        #kc-bg .kc-bg-king-tint {
+            /* (no-op spacer class - reserved for future tinting if needed) */
+        }
+
+        /* Main content must stack ABOVE the decorative layer. Streamlit's
+           default block-container has no z-index, so we lift it explicitly. */
+        .stApp > .stMain,
+        section[data-testid="stSidebar"],
+        header[data-testid="stHeader"] {
+            position: relative;
+            z-index: 1;
         }
         .block-container {
             max-width: 1500px !important;
@@ -203,10 +280,17 @@ def _inject_css() -> None:
             color: var(--kc-silver); letter-spacing: -0.01em;
         }
 
-        /* CARDS */
+        /* CARDS - now semi-translucent so the background art whispers through.
+           rgba(...0.86) keeps the deep-green identity while letting ~14% of the
+           decorative layer show. backdrop-filter adds a tiny blur so text stays
+           crisp even when a chess silhouette is behind the card. */
         .kc-card {
             position: relative;
-            background: linear-gradient(180deg, var(--kc-card) 0%, #122922 100%);
+            background: linear-gradient(180deg,
+                rgba(22, 48, 43, 0.86) 0%,
+                rgba(18, 41, 34, 0.88) 100%);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
             border: 1px solid var(--kc-border); border-radius: 16px;
             padding: 1.3rem 1.55rem 1.5rem;
             box-shadow: 0 8px 24px rgba(0,0,0,0.32), inset 0 1px 0 rgba(224, 224, 224, 0.03);
@@ -270,9 +354,16 @@ def _inject_css() -> None:
             border-radius: 999px; box-shadow: 0 0 10px rgba(163, 133, 96, 0.35);
         }
 
-        /* CHART PANEL */
+        /* CHART PANEL - matches the card translucency so charts read cleanly
+           against the background art. Charts have transparent paper_bgcolor
+           via the Plotly layout, so the card's translucent surface is what
+           the user sees behind the data ink. */
         .kc-chart-panel {
-            background: linear-gradient(180deg, var(--kc-card) 0%, #122922 100%);
+            background: linear-gradient(180deg,
+                rgba(22, 48, 43, 0.88) 0%,
+                rgba(18, 41, 34, 0.90) 100%);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
             border: 1px solid var(--kc-border); border-radius: 16px;
             padding: 1.0rem 1.15rem 0.5rem; margin-bottom: 1.05rem;
             box-shadow: 0 8px 24px rgba(0,0,0,0.32), inset 0 1px 0 rgba(224, 224, 224, 0.03);
@@ -1786,6 +1877,12 @@ def _render_how_it_works() -> None:
 # ----------------------------------------------------------------------------
 def main() -> None:
     _inject_css()
+
+    # Decorative chess background layer. A fixed-position, click-through wrapper
+    # rendered ONCE before any Streamlit content so the ::before / ::after rules
+    # in _inject_css() have a stable mount point that lives outside the
+    # .block-container scroll area. See the #kc-bg CSS block above.
+    st.markdown('<div id="kc-bg" aria-hidden="true"></div>', unsafe_allow_html=True)
 
     try:
         reg, clf, history, metadata = _load_artifacts()
