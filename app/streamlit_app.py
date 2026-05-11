@@ -441,7 +441,47 @@ def _load_artifacts():
     reg, clf, history, metadata = load_models()
     history = history.copy()
     history["event_date"] = pd.to_datetime(history["event_date"])
+    history = history.sort_values("event_date").reset_index(drop=True)
+    history = _backfill_history(history)
     return reg, clf, history, metadata
+
+
+def _backfill_history(history: pd.DataFrame) -> pd.DataFrame:
+    """If event_history.parquet was produced by an older training run, some of
+    the prior-event / rolling columns the charts expect may be missing. Compute
+    them on the fly from `attendance_count` (and friends) so every chart works
+    no matter which version of the parquet is loaded. All derivations use
+    .shift(1) so we never introduce same-night leakage."""
+    h = history.copy()
+
+    def need(col: str) -> bool:
+        return col not in h.columns or h[col].isna().all()
+
+    if need("previous_event_attendance"):
+        h["previous_event_attendance"] = h["attendance_count"].shift(1)
+    if need("attendance_two_events_ago"):
+        h["attendance_two_events_ago"] = h["attendance_count"].shift(2)
+    for w in (3, 5, 10):
+        col = f"rolling_{w}_event_attendance"
+        if need(col):
+            h[col] = h["attendance_count"].shift(1).rolling(window=w, min_periods=1).mean()
+    if "days_since_last_event" not in h.columns:
+        h["days_since_last_event"] = (h["event_date"] - h["event_date"].shift(1)).dt.days
+
+    # Community-momentum lag columns (only if source columns are present)
+    pair_rules = [
+        ("previous_event_unique_players", "unique_players"),
+        ("previous_event_new_players_count", "new_players_count"),
+        ("previous_event_returning_players_count", "returning_players_count"),
+        ("previous_event_num_games", "num_games"),
+        ("previous_event_draw_rate", "draw_rate"),
+        ("previous_event_games_per_player", "games_per_player"),
+    ]
+    for prev_col, src_col in pair_rules:
+        if need(prev_col) and src_col in h.columns:
+            h[prev_col] = h[src_col].shift(1)
+
+    return h
 
 
 # ----------------------------------------------------------------------------
@@ -739,8 +779,12 @@ def _smoothed_chart(history: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def _prev_vs_next_chart(history: pd.DataFrame) -> go.Figure:
-    h = history.sort_values("event_date").copy()
+def _prev_vs_next_chart(history: pd.DataFrame) -> go.Figure | None:
+    if "previous_event_attendance" not in history.columns:
+        return None
+    h = history.sort_values("event_date").dropna(subset=["previous_event_attendance"]).copy()
+    if h.empty:
+        return None
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=h["previous_event_attendance"], y=h["attendance_count"],
@@ -809,8 +853,12 @@ def _avg_by_month_chart(history: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def _gap_vs_attendance_chart(history: pd.DataFrame) -> go.Figure:
+def _gap_vs_attendance_chart(history: pd.DataFrame) -> go.Figure | None:
+    if "days_since_last_event" not in history.columns:
+        return None
     h = history.dropna(subset=["days_since_last_event"]).copy()
+    if h.empty:
+        return None
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=h["days_since_last_event"], y=h["attendance_count"],
@@ -903,7 +951,9 @@ def _holiday_compare_chart(history: pd.DataFrame) -> go.Figure | None:
     return fig
 
 
-def _players_over_time_chart(history: pd.DataFrame) -> go.Figure:
+def _players_over_time_chart(history: pd.DataFrame) -> go.Figure | None:
+    if not {"returning_players_count", "new_players_count"}.issubset(history.columns):
+        return None
     h = history.sort_values("event_date").copy()
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -929,7 +979,9 @@ def _players_over_time_chart(history: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def _games_per_player_chart(history: pd.DataFrame) -> go.Figure:
+def _games_per_player_chart(history: pd.DataFrame) -> go.Figure | None:
+    if "games_per_player" not in history.columns:
+        return None
     h = history.sort_values("event_date").copy()
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -1009,12 +1061,14 @@ def _tab_attendance_momentum(history: pd.DataFrame, pred) -> None:
         _trend_chart(history, pred),
         "Bronze dotted line = last-3-event average. Bronze solid line = last-5-event average.",
     )
-    _chart_panel(
-        "Previous night vs the next night",
-        _prev_vs_next_chart(history),
-        "Dots above the dashed line are nights that grew from the one before. "
-        "Below it, nights that dropped.",
-    )
+    prev_fig = _prev_vs_next_chart(history)
+    if prev_fig is not None:
+        _chart_panel(
+            "Previous night vs the next night",
+            prev_fig,
+            "Dots above the dashed line are nights that grew from the one before. "
+            "Below it, nights that dropped.",
+        )
 
 
 def _tab_calendar(history: pd.DataFrame) -> None:
@@ -1048,11 +1102,13 @@ def _tab_calendar(history: pd.DataFrame) -> None:
     )
     st.markdown(f'<div class="kc-stat-strip">{chips}</div>', unsafe_allow_html=True)
 
-    _chart_panel(
-        "Gap between events vs how busy the night was",
-        _gap_vs_attendance_chart(history),
-        "Nights after very long gaps (30+ days) often run lighter as the regulars get out of rhythm.",
-    )
+    gap_fig = _gap_vs_attendance_chart(history)
+    if gap_fig is not None:
+        _chart_panel(
+            "Gap between events vs how busy the night was",
+            gap_fig,
+            "Nights after very long gaps (30+ days) often run lighter as the regulars get out of rhythm.",
+        )
 
     holiday_fig = _holiday_compare_chart(history)
     if holiday_fig is not None:
@@ -1096,20 +1152,28 @@ def _tab_community(history: pd.DataFrame) -> None:
         "club in growth. This tab tracks the mix over time so you can see whether "
         "momentum is building."
     )
-    _chart_panel(
-        "Returning vs new players each night",
-        _players_over_time_chart(history),
-        "Stacked area &mdash; the gold band is returning regulars, the dark-red band is players new to the club that night.",
-    )
+    players_fig = _players_over_time_chart(history)
+    if players_fig is not None:
+        _chart_panel(
+            "Returning vs new players each night",
+            players_fig,
+            "Stacked area &mdash; the gold band is returning regulars, the dark-red band is players new to the club that night.",
+        )
     col_a, col_b = st.columns([1.4, 1])
     with col_a:
-        _chart_panel("Games per player over time", _games_per_player_chart(history))
+        gpp_fig = _games_per_player_chart(history)
+        if gpp_fig is not None:
+            _chart_panel("Games per player over time", gpp_fig)
+        else:
+            st.info("Games-per-player history is not available in the current data.")
     with col_b:
-        # Simple last-3 vs last-10 comparison chip
+        # Simple last-3 vs all-time comparison chip
         rec3 = history["attendance_count"].tail(3).mean()
         all_avg = history["attendance_count"].mean()
-        last_new = float(history["new_players_count"].tail(3).mean())
-        last_ret = float(history["returning_players_count"].tail(3).mean())
+        last_new = float(history["new_players_count"].tail(3).mean()) if "new_players_count" in history.columns else float("nan")
+        last_ret = float(history["returning_players_count"].tail(3).mean()) if "returning_players_count" in history.columns else float("nan")
+        new_disp = f"{last_new:.1f}" if not pd.isna(last_new) else "—"
+        ret_disp = f"{last_ret:.1f}" if not pd.isna(last_ret) else "—"
         st.markdown(
             f"""
             <div class="kc-stat-strip kc-stat-strip-3" style="grid-template-columns: 1fr; gap:0.6rem;">
@@ -1120,12 +1184,12 @@ def _tab_community(history: pd.DataFrame) -> None:
               </div>
               <div class="kc-stat-chip">
                 <div class="label">New players · last 3</div>
-                <div class="value">{last_new:.1f}</div>
+                <div class="value">{new_disp}</div>
                 <div class="sub">per night, on average</div>
               </div>
               <div class="kc-stat-chip">
                 <div class="label">Returning players · last 3</div>
-                <div class="value">{last_ret:.1f}</div>
+                <div class="value">{ret_disp}</div>
                 <div class="sub">per night, on average</div>
               </div>
             </div>
