@@ -4,3 +4,17 @@ event_date,attendance_count,players,source_note
 2025-03-16,10,"Benji,Harold,Josh,Albert,Jenny,Taylor,Amanda,Omar,Ryan,Christina",Swiss standings table pasted manually
 2025-03-23,11,"Harold,Josh,Cade,Albert,Taylor,Gavin,Omar,Anthony,Daniel,Ryan,Amanda",Swiss standings table pasted manually
 2025-03-30,8,"Benjamin,Brian,Harold,Jack,Jay,Codi,Samael,Tanner",Swiss standings table pasted manually
+2025-04-10,8,"Harold,Ritchie,Ben,Brian,Jack,Platano,Frank,Wes",Swiss standings or pairing summary pasted manually
+2025-04-13,16,"Brian,Benjamin,Robert,Jenny,Omar,Cade,Steve,Harold,Jay,Ryan,Diego,Gavin,Maddie,Stevo,Sam J,Tanner",Swiss standings or pairing summary pasted manually
+2025-04-27,20,"Ben,Brian,Derek,Gavin,Jay,Jenny,Harold,Josh,Cade,Sam J,Israel,Stevo,Ryan,Albert,Maddie,Amanda,Diego,Taylor,Kandee,Jonathan",Swiss standings or pairing summary pasted manually
+2025-05-11,12,"Harold,Brian,Israel,Steve,Derek,Albert,Myles,Omar,Taylor,Jona,Amanda,Maddie",Swiss standings or pairing summary pasted manually (excluded duplicate/empty Israel row; Briwn standardized to Brian)
+2025-06-15,10,"Andres,Benjamin,Harold,Brian,Sam J,Israel,Albert,Taylor,Maddie,Thomas",Swiss standings or pairing summary pasted manually
+2025-06-29,10,"Andrys,Benny,Jonathon,Harold,Josh,Patrick,Derek,Maddie,Thomas,Taylor",Swiss standings or pairing summary pasted manually
+2025-07-13,15,"Harold,Brian,Benjamin,Patrick,Omar,Frank,Amad,Derek,Dave,Cade,Maddie,David,Haleigh,Taylor,Thomas",Swiss standings or pairing summary pasted manually (Haleugh standardized to Haleigh)
+2025-07-27,14,"Derek,Joseph,Mathew,Patrick,Jenny,Brian,Harold,Josh,Omar,Cade,Andrys,Jessica,Taylor,Isa",Swiss standings or pairing summary pasted manually
+2025-08-10,9,"Ben,Eddy,Harold,Brian,Derek,Cade,Jonathon,Maddie,Isa",Swiss standings or pairing summary pasted manually
+2025-08-24,10,"Ben,Harold,Josh,Brian,Derek,Jay,Jona,Taylor,Maddie,Thomas",Swiss standings or pairing summary pasted manually
+2025-09-07,14,"Andrys,Jasiel,Harold,Ben,Brian,Derek,Juan,Diego,Sam,Cade,Cody,Isa,Ayeh,Taylor",Swiss standings or pairing summary pasted manually
+2025-09-21,13,"Benji,Andrys,Israel,Harold,Schmerick,Dan,Brian,Ryan,Patrick,Taylor,Shawn,Steve,Thomas",Swiss standings or pairing summary pasted manually (excluded duplicate/empty Israel row)
+2025-10-05,20,"Benjamin,Adele,Patrick,Dave,Alex,Harold,Mathew,Israel,Josh,Brian,Frank,Cade,Amad,Jay,Omar,Erick,John,Johnathan,Stevo,Taylor",Pairing/starting-list table pasted manually (game_logs version preferred at merge)
+2026-03-01,17,"Harold,Benji,Bob,Israel,Brian,Alonso,Omar,Zack,Stevo,Diego,Sam,Maddie,Jona,Thomas,Daniel,Taylor,Omar New",Standings/pairing summary pasted manually (game_logs version preferred at merge)

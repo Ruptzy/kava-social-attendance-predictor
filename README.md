@@ -201,16 +201,18 @@ computed once over the gold table — see `models/metadata.json`.
 
 | Model | Holdout MAE (last 14 events) | Notes |
 | --- | --- | --- |
-| Naive (last event) | 4.14 players | Always predicts the previous night's count. The baseline to beat. |
-| Ridge Regression | 5.06 players | Simple interpretable linear model — too rigid for this signal. |
-| **Random Forest** | **2.79 players** ✅ | Non-linear tree ensemble. **Selected.** |
-| Gradient Boosting | 3.40 players | Strong second place. |
+| Naive (last event) | 3.64 players | Always predicts the previous night's count. The baseline to beat. |
+| Ridge Regression | 4.44 players | Simple interpretable linear model — too rigid for this signal. |
+| **Random Forest** | **2.68 players** ✅ | Non-linear tree ensemble. **Selected.** |
+| Gradient Boosting | 3.33 players | Strong second place. |
 
 The selected Random Forest model improved over the naive baseline by about
-1.3 players on the chronological holdout set. A few early-2025 bracket nights
-were recovered from Swiss standings tables (player lists + total attendance,
-no game-by-game logs); each carries `source_type = "standings_summary"` in
-the gold event table so the lineage is preserved. All runs are tracked in MLflow
+1.0 player on the chronological holdout set. Seventeen 2025 bracket nights
+were recovered from Swiss standings or pairing summaries (player lists +
+total attendance, no game-by-game logs); each carries
+`source_type = "standings_summary"` in the gold event table so the lineage
+is preserved. The current dataset is 72 game-log events + 17 standings
+events = **89 total**. All runs are tracked in MLflow
 under `./mlruns/`. The classifier (for the "high turnout" label) is kept as
 a Random Forest. Exact values live in `models/metadata.json`.
 
