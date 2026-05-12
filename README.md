@@ -93,10 +93,12 @@ kava-social-attendance-predictor/
 │   ├── train_model.py             # RF regressor + RF classifier, MLflow tracked
 │   └── predict.py                 # inference helper for any future date
 ├── app/streamlit_app.py           # public web UI
-├── tests/test_project.py          # end-to-end test script
+├── test_project.py                # end-to-end test script (root, for the grader)
+├── tests/test_project.py          # same script kept in tests/ for organization
 ├── models/                        # trained .joblib + metadata.json + event_history.parquet
 ├── mlruns/                        # MLflow tracking store
-└── reports/one_page_writeup.pdf   # one-page project summary
+├── one_page_writeup.pdf           # one-page project summary (root, for the grader)
+└── reports/one_page_writeup.pdf   # same PDF kept in reports/ for organization
 ```
 
 ## Running it locally
@@ -154,10 +156,10 @@ To run the **distributed PySpark transform** against S3:
 ### 4. Run the test script
 
 ```bash
-.\.venv\Scripts\python.exe tests/test_project.py
+.\.venv\Scripts\python.exe test_project.py
 # Or, against the live deployed URL:
 $env:KAVA_APP_URL = "https://your-app.streamlit.app"
-.\.venv\Scripts\python.exe tests/test_project.py
+.\.venv\Scripts\python.exe test_project.py
 ```
 
 ## Deploying to Streamlit Community Cloud
