@@ -2348,7 +2348,438 @@ def _tab_community(history: pd.DataFrame) -> None:
         )
 
 
-def _tab_model(history: pd.DataFrame, reg, metadata: dict) -> None:
+# ----------------------------------------------------------------------------
+# VENUE VALUE TAB
+# ----------------------------------------------------------------------------
+# A business-facing revenue estimator that sits on top of the attendance
+# forecast. It does NOT change any model or training logic; it's purely a
+# calculator that translates the forecast (or historical / manual attendance)
+# into a conservative player-only drink-revenue estimate.
+
+# Default average drink price - computed from the public Kava Social
+# DoorDash menu (Green / White / Red OG, House Quad, Tropic Wave, Citrus
+# Tsunami): mean of [11.90, 11.90, 11.90, 11.90, 17.36, 17.36] = 13.72.
+# Rounded to $13.75 as the on-screen default. Kept as a slider input so
+# the user can dial it up or down because DoorDash itself flags that
+# delivery and pickup prices can differ.
+DEFAULT_DRINK_PRICE = 13.75
+
+
+def _money(value: float) -> str:
+    """Render a number as a clean dollar string with thousands separators."""
+    try:
+        if value is None or pd.isna(value):
+            return "$ —"
+        return "${:,.0f}".format(float(value)) if abs(value) >= 100 else "${:,.2f}".format(float(value))
+    except Exception:
+        return "$ —"
+
+
+def _venue_value_controls(history: pd.DataFrame, pred):
+    """Render the input controls at the top of the Venue Value tab and
+    return the chosen settings as a small dict."""
+    avg_att_hist = float(history["attendance_count"].mean())
+    pred_att = int(pred.predicted_attendance_rounded)
+
+    c1, c2, c3 = st.columns([1, 1, 1])
+    with c1:
+        drinks_per_player = st.selectbox(
+            "Drinks per player",
+            options=[1, 2],
+            index=0,
+            help="A conservative starting point. Some players will buy more.",
+            key="vv_drinks_per_player",
+        )
+    with c2:
+        avg_price = st.slider(
+            "Average drink price",
+            min_value=8.00, max_value=25.00,
+            value=DEFAULT_DRINK_PRICE, step=0.25,
+            format="$%.2f",
+            help="Default based on the public Kava Social DoorDash menu (~$13.75).",
+            key="vv_avg_price",
+        )
+    with c3:
+        events_per_month = st.number_input(
+            "Bracket nights per month",
+            min_value=1, max_value=6, value=2, step=1,
+            help="Kava chess brackets usually run every two weeks.",
+            key="vv_events_per_month",
+        )
+
+    c4, c5 = st.columns([1, 1])
+    with c4:
+        attendance_source = st.selectbox(
+            "Attendance to use for the per-night estimate",
+            options=["Predicted attendance", "Historical average", "Manual attendance"],
+            index=0,
+            key="vv_attendance_source",
+        )
+    with c5:
+        default_manual = pred_att if attendance_source != "Historical average" else int(round(avg_att_hist))
+        manual_att = st.number_input(
+            "Manual attendance (used when 'Manual' is selected)",
+            min_value=1, max_value=80, value=default_manual, step=1,
+            key="vv_manual_att",
+        )
+
+    if attendance_source == "Predicted attendance":
+        chosen_att = pred_att
+        chosen_label = f"Predicted for {pred.event_date}"
+    elif attendance_source == "Historical average":
+        chosen_att = int(round(avg_att_hist))
+        chosen_label = "Historical average"
+    else:
+        chosen_att = int(manual_att)
+        chosen_label = "Manual"
+
+    return {
+        "drinks_per_player": int(drinks_per_player),
+        "avg_price": float(avg_price),
+        "events_per_month": int(events_per_month),
+        "chosen_att": int(chosen_att),
+        "chosen_label": chosen_label,
+        "attendance_source": attendance_source,
+        "pred_att": pred_att,
+        "avg_att_hist": avg_att_hist,
+    }
+
+
+def _venue_value_cards(settings: dict, history: pd.DataFrame, pred) -> None:
+    """Top metric strip: per-night / monthly / yearly / total tracked +
+    a textual 'extras not counted' card."""
+    rev_per_night = settings["chosen_att"] * settings["drinks_per_player"] * settings["avg_price"]
+    rev_month = rev_per_night * settings["events_per_month"]
+    rev_year = rev_month * 12
+
+    total_tracked_att = float(history["attendance_count"].sum())
+    total_tracked_rev = total_tracked_att * settings["drinks_per_player"] * settings["avg_price"]
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown(
+            f"""
+            <div class="kc-card kc-card--feature">
+              <div class="kc-card-label">Per bracket night</div>
+              <div class="kc-card-value kc-card-value--bronze">{_money(rev_per_night)}</div>
+              <div class="kc-card-sub">{settings['chosen_label']} &middot; <b>{settings['chosen_att']}</b> players &times; <b>{settings['drinks_per_player']}</b> drink{'s' if settings['drinks_per_player'] > 1 else ''} &middot; {_money(settings['avg_price'])} avg.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            f"""
+            <div class="kc-card">
+              <div class="kc-card-label">Monthly estimate</div>
+              <div class="kc-card-value kc-card-value--bronze">{_money(rev_month)}</div>
+              <div class="kc-card-sub">Based on <b>{settings['events_per_month']}</b> bracket night{'s' if settings['events_per_month'] > 1 else ''} per month.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with c3:
+        st.markdown(
+            f"""
+            <div class="kc-card">
+              <div class="kc-card-label">Yearly estimate</div>
+              <div class="kc-card-value kc-card-value--bronze">{_money(rev_year)}</div>
+              <div class="kc-card-sub">Repeating monthly estimate over 12 months.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with c4:
+        st.markdown(
+            f"""
+            <div class="kc-card kc-card--navy">
+              <div class="kc-card-label">Total tracked bracket value</div>
+              <div class="kc-card-value kc-card-value--bronze" style="font-size:2.4rem;">{_money(total_tracked_rev)}</div>
+              <div class="kc-card-sub">Sum across <b>{len(history)}</b> historical bracket nights ({int(total_tracked_att):,} total player-seats) at the chosen drinks &amp; price.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # Conservative note card (no friends / spectators / food)
+    st.markdown(
+        '<div class="kc-trust" style="margin-top:0.6rem;">'
+        '<b>Extras not counted.</b> Bracket players often bring friends, '
+        'partners, and spectators who may also buy drinks. Additional food '
+        'and merchandise purchases are also excluded. This estimate is '
+        'therefore a <i>conservative floor</i>, not the full event value.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _scenario_chart(settings: dict, history: pd.DataFrame, pred) -> go.Figure:
+    """Bar chart: per-night revenue across Low / Typical / Predicted / High."""
+    q = history["attendance_count"]
+    scenarios = [
+        ("Low turnout",      int(round(float(q.quantile(0.25))))),
+        ("Typical turnout",  int(round(float(q.median())))),
+        ("Predicted",        settings["pred_att"]),
+        ("High turnout",     int(round(float(q.quantile(0.85))))),
+    ]
+    labels = [s[0] for s in scenarios]
+    counts = [s[1] for s in scenarios]
+    revs = [c * settings["drinks_per_player"] * settings["avg_price"] for c in counts]
+    # Color: highlight the Predicted bar
+    colors = [BRONZE_DIM, BRONZE, BRONZE_BRIGHT, BRONZE_DIM]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=labels, y=revs,
+        marker=dict(color=colors, line=dict(color=BURGUNDY, width=0.8)),
+        text=[f"<b>{_money(r)}</b><br>{c} players" for r, c in zip(revs, counts)],
+        textposition="outside",
+        textfont=dict(color=SILVER, size=11),
+        hovertemplate="<b>%{x}</b><br>%{customdata} players<br>%{y:$,.0f}<extra></extra>",
+        customdata=counts,
+    ))
+    fig.update_layout(**_layout(
+        height=340, margin=dict(l=20, r=20, t=30, b=40),
+        xaxis=dict(color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+                   tickfont=dict(color=SILVER, size=12), showgrid=False, ticks=""),
+        yaxis=dict(
+            title=dict(text="Revenue per night ($)", font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            gridcolor="rgba(224,224,224,0.06)",
+            tickfont=dict(color=SILVER_DIM, size=11),
+            tickprefix="$", tickformat=",.0f",
+            rangemode="tozero",
+        ),
+        showlegend=False, bargap=0.30,
+    ))
+    return fig
+
+
+def _historical_revenue_chart(settings: dict, history: pd.DataFrame) -> go.Figure:
+    """Line chart of estimated per-night player-only revenue over time."""
+    h = history.sort_values("event_date").copy()
+    h["rev"] = h["attendance_count"] * settings["drinks_per_player"] * settings["avg_price"]
+    h["rolling_5"] = h["rev"].rolling(5, min_periods=1).mean()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=h["event_date"], y=h["rev"],
+        mode="lines+markers", name="Each night",
+        line=dict(color=SILVER, width=2.0),
+        marker=dict(size=6, color=SILVER, line=dict(color=DEEP_GREEN, width=1)),
+        hovertemplate="<b>%{x|%b %d, %Y}</b><br>%{y:$,.0f}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=h["event_date"], y=h["rolling_5"],
+        mode="lines", name="Last-5-event average",
+        line=dict(color=BRONZE_BRIGHT, width=2.8, shape="spline", smoothing=0.5),
+        hovertemplate="<b>%{x|%b %d, %Y}</b><br>5-event avg %{y:$,.0f}<extra></extra>",
+    ))
+    fig.update_layout(**_layout(
+        height=360, margin=dict(l=20, r=20, t=20, b=40),
+        xaxis=dict(
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            tickfont=dict(color=SILVER_DIM, size=11), showgrid=False, ticks="",
+            tickformatstops=[
+                dict(dtickrange=[None, 86400000 * 90], value="%b %Y"),
+                dict(dtickrange=[86400000 * 90, None], value="%Y"),
+            ],
+        ),
+        yaxis=dict(
+            title=dict(text="Estimated player revenue ($)", font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            gridcolor="rgba(224,224,224,0.06)",
+            tickfont=dict(color=SILVER_DIM, size=11),
+            tickprefix="$", tickformat=",.0f",
+            rangemode="tozero",
+        ),
+    ))
+    return fig
+
+
+def _monthly_revenue_chart(settings: dict, history: pd.DataFrame) -> go.Figure:
+    """Bar chart: total estimated revenue per calendar month."""
+    h = history.copy()
+    h["ym"] = h["event_date"].dt.to_period("M").dt.to_timestamp()
+    h["rev"] = h["attendance_count"] * settings["drinks_per_player"] * settings["avg_price"]
+    monthly = h.groupby("ym")["rev"].sum().reset_index()
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=monthly["ym"], y=monthly["rev"],
+        marker=dict(color=BRONZE, line=dict(color=BURGUNDY, width=0.8)),
+        hovertemplate="<b>%{x|%b %Y}</b><br>%{y:$,.0f}<extra></extra>",
+    ))
+    fig.update_layout(**_layout(
+        height=320, margin=dict(l=20, r=20, t=20, b=40),
+        xaxis=dict(
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            tickfont=dict(color=SILVER_DIM, size=11),
+            tickformat="%b %Y", showgrid=False, ticks="",
+        ),
+        yaxis=dict(
+            title=dict(text="Estimated revenue ($)", font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            gridcolor="rgba(224,224,224,0.06)",
+            tickfont=dict(color=SILVER_DIM, size=11),
+            tickprefix="$", tickformat=",.0f",
+            rangemode="tozero",
+        ),
+        showlegend=False, bargap=0.25,
+    ))
+    return fig
+
+
+def _cumulative_revenue_chart(settings: dict, history: pd.DataFrame) -> go.Figure:
+    """Cumulative estimated revenue over time - the 'long-term value' story."""
+    h = history.sort_values("event_date").copy()
+    h["rev"] = h["attendance_count"] * settings["drinks_per_player"] * settings["avg_price"]
+    h["cum"] = h["rev"].cumsum()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=h["event_date"], y=h["cum"],
+        mode="lines", name="Cumulative",
+        line=dict(color=BRONZE_BRIGHT, width=3.2, shape="spline", smoothing=0.4),
+        fill="tozeroy",
+        fillcolor="rgba(163, 133, 96, 0.10)",
+        hovertemplate="<b>%{x|%b %d, %Y}</b><br>Cumulative %{y:$,.0f}<extra></extra>",
+    ))
+    fig.update_layout(**_layout(
+        height=320, margin=dict(l=20, r=20, t=20, b=40),
+        xaxis=dict(
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            tickfont=dict(color=SILVER_DIM, size=11), showgrid=False, ticks="",
+            tickformatstops=[
+                dict(dtickrange=[None, 86400000 * 90], value="%b %Y"),
+                dict(dtickrange=[86400000 * 90, None], value="%Y"),
+            ],
+        ),
+        yaxis=dict(
+            title=dict(text="Cumulative estimated revenue ($)", font=dict(color=SILVER_DIM, size=11)),
+            color=SILVER_DIM, linecolor="rgba(224,224,224,0.12)",
+            gridcolor="rgba(224,224,224,0.06)",
+            tickfont=dict(color=SILVER_DIM, size=11),
+            tickprefix="$", tickformat=",.0f",
+            rangemode="tozero",
+        ),
+        showlegend=False,
+    ))
+    return fig
+
+
+def _tab_venue_value(history: pd.DataFrame, pred) -> None:
+    """Owner-facing tab that estimates conservative player-only drink revenue
+    for Kava Social chess bracket nights. Useful for pitching event-organizer
+    pay, club funding, and long-term venue partnership."""
+    _explain(
+        "<b>What this is.</b> A conservative drink-revenue estimator for Kava "
+        "Social chess bracket nights. It multiplies expected attendance by a "
+        "per-player drink count and an adjustable average drink price. It does "
+        "<i>not</i> include friends, partners, spectators, food, or merch &mdash; "
+        "so read it as a <b>floor</b>, not the full event value."
+    )
+    st.markdown(
+        '<div class="kc-trust" style="margin-top:0.4rem;">'
+        '<b>Pricing note.</b> The default average drink price ($13.75) is based '
+        'on the public Kava Social DoorDash menu (mean of the OG / House '
+        'Quad / Tropic Wave / Citrus Tsunami doubles). Menu prices can differ '
+        'between delivery and in-person pickup, so the slider lets you dial '
+        'the estimate to a price that matches your floor.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ---- Controls ----
+    settings = _venue_value_controls(history, pred)
+
+    # ---- Top metric strip ----
+    st.write("")
+    _venue_value_cards(settings, history, pred)
+
+    # ---- Scenario bar chart ----
+    st.write("")
+    _chart_panel(
+        "Revenue by attendance scenario",
+        _scenario_chart(settings, history, pred),
+        "Low and high scenarios use the 25th and 85th percentile of historical "
+        "attendance; Typical is the median. Predicted is the model's forecast "
+        "for the date in the sidebar.",
+    )
+    rev_pred = settings["pred_att"] * settings["drinks_per_player"] * settings["avg_price"]
+    rev_typ = float(history["attendance_count"].median()) * settings["drinks_per_player"] * settings["avg_price"]
+    delta = rev_pred - rev_typ
+    if abs(delta) <= 5:
+        scenario_msg = (
+            f"The forecast lines up with a typical bracket night at about "
+            f"<b>{_money(rev_pred)}</b> in player drinks &mdash; a repeatable, "
+            "predictable benefit to the venue."
+        )
+    elif delta > 0:
+        scenario_msg = (
+            f"This forecast points to <b>{_money(delta)}</b> more in player drinks "
+            "than a typical night, so the venue may want to staff and stock for "
+            "a busier-than-usual evening."
+        )
+    else:
+        scenario_msg = (
+            f"This forecast points to about <b>{_money(abs(delta))}</b> less in "
+            "player drinks than a typical night. Recurring nights still compound "
+            "into meaningful monthly revenue."
+        )
+    _takeaway(scenario_msg)
+
+    # ---- Historical estimated revenue ----
+    st.write("")
+    _chart_panel(
+        "Historical estimated player revenue per night",
+        _historical_revenue_chart(settings, history),
+        "Each silver dot is one bracket night. The bronze line is the last-5-event average.",
+    )
+    rev_5 = (
+        history["attendance_count"].tail(5).mean()
+        * settings["drinks_per_player"] * settings["avg_price"]
+    )
+    _takeaway(
+        "Even at a conservative one-drink-per-player floor, regular bracket "
+        "nights create <b>repeatable</b> revenue for the venue. The last-5-"
+        f"event average sits near <b>{_money(rev_5)}</b> at the current "
+        "drinks-per-player and average-price settings."
+    )
+
+    # ---- Monthly bars ----
+    st.write("")
+    _chart_panel(
+        "Estimated bracket revenue by month",
+        _monthly_revenue_chart(settings, history),
+        "Each bar is the total estimated player drink revenue from every "
+        "bracket night that month.",
+    )
+    h_month = history.copy()
+    h_month["ym"] = h_month["event_date"].dt.to_period("M").dt.to_timestamp()
+    h_month["rev"] = (
+        h_month["attendance_count"] * settings["drinks_per_player"] * settings["avg_price"]
+    )
+    monthly_avg_rev = float(h_month.groupby("ym")["rev"].sum().mean())
+    _takeaway(
+        f"Across the tracked history, a typical month of bracket nights has "
+        f"generated about <b>{_money(monthly_avg_rev)}</b> in estimated player "
+        "drinks. That's a recurring monthly benefit at the venue's chosen "
+        "drinks-per-player and price settings."
+    )
+
+    # ---- Cumulative ----
+    st.write("")
+    _chart_panel(
+        "Cumulative estimated bracket revenue",
+        _cumulative_revenue_chart(settings, history),
+        "How player-only drink revenue compounds across every bracket night.",
+    )
+    total_tracked_rev = float(history["attendance_count"].sum()) * settings["drinks_per_player"] * settings["avg_price"]
+    _takeaway(
+        "Long-term value compounds quickly even on a one-drink-per-player "
+        f"floor. The full tracked history (<b>{len(history)}</b> bracket "
+        f"nights) sums to roughly <b>{_money(total_tracked_rev)}</b> at the "
+        "current settings &mdash; before counting friends, spectators, food, "
+        "or merch."
+    )
     # ---- headline metrics in plain language ----
     n = metadata.get("n_training_events", 0)
     sel_label = metadata.get("selected_model_label", "Random Forest")
@@ -2670,9 +3101,10 @@ def main() -> None:
     _forecast_summary(pred)
 
     _section_header("Why", "What's driving this forecast")
-    tab_sum, tab_mom, tab_cal, tab_wx, tab_com, tab_mod = st.tabs([
+    tab_sum, tab_mom, tab_cal, tab_wx, tab_com, tab_val, tab_mod = st.tabs([
         "Summary chart", "Recent attendance", "Calendar timing",
-        "Bradenton weather", "Community momentum", "Model & method",
+        "Bradenton weather", "Community momentum",
+        "Venue value", "Model & method",
     ])
     with tab_sum:
         _tab_summary(history, pred)
@@ -2684,6 +3116,8 @@ def main() -> None:
         _tab_weather(history, pred)
     with tab_com:
         _tab_community(history)
+    with tab_val:
+        _tab_venue_value(history, pred)
     with tab_mod:
         _tab_model(history, reg, metadata)
 

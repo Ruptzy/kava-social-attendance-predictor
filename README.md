@@ -19,6 +19,7 @@ clocks, and staffing.
 - **Predicts:** unique-player attendance for an upcoming Kava Social chess bracket night
 - **Does NOT predict:** chess games, winners, player strength, openings, or individual performance
 - **Data source:** historical Kava Social chess bracket / game logs, aggregated into event-level attendance
+- **Venue value calculator (built in):** the app also ships with a conservative player-only drink-revenue estimator that turns predicted, historical-average, or manual attendance into per-night / monthly / yearly / cumulative dollar figures — useful for venue-partnership conversations
 
 ---
 

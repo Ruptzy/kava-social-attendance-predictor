@@ -4,7 +4,7 @@
 **Live app:** https://kava-social-attendance-predictor-cwlaxs6ygbxud7z48884zq.streamlit.app/ · **Repo:** github.com/Ruptzy/kava-social-attendance-predictor
 
 ## What it predicts
-Unique-player attendance for a future Kava Social chess bracket night in Bradenton, FL. Two heads share one feature row: a regressor for `attendance_count` and a classifier for `high_turnout` (1 if attendance ≥ historical median, 15 players). The tool is built for the people who run the bracket — to plan boards, clocks, and staffing — not to forecast game outcomes, openings, or player performance.
+Unique-player attendance for a future Kava Social chess bracket night in Bradenton, FL. Two heads share one feature row: a regressor for `attendance_count` and a classifier for `high_turnout` (1 if attendance ≥ historical median, 15 players). The tool is built for the people who run the bracket — to plan boards, clocks, and staffing — not to forecast game outcomes, openings, or player performance. The app also includes a conservative venue-value calculator that estimates player-only drink revenue from predicted or historical bracket attendance, as a planning floor for venue-partnership conversations.
 
 ## Data source
 72 historical Kava Social bracket nights (Sep 2022 – Apr 2026), stored as game-level rows (`Date, Time, White, Black, Winner`). One bracket night contains 20–50 such rows; I aggregate to event level — attendance for a date is the count of unique non-null players in either color column. Weather is pulled from the free Open-Meteo archive + forecast APIs for Bradenton (27.50 N, −82.57 W).
