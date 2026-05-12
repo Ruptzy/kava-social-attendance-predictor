@@ -322,6 +322,17 @@ def _inject_css() -> None:
             font-size: 0.9rem; font-weight: 400; color: var(--kc-silver-mute);
             margin-left: 0.45rem;
         }
+        /* Stacked alternative to .kc-card-unit - the unit text sits on its
+           own line directly under the number, no awkward floating "players"
+           beside a 3rem digit. Used by the Predicted Attendance card. */
+        .kc-card-unit-stacked {
+            display: block;
+            font-size: 0.92rem;
+            font-weight: 500;
+            color: var(--kc-silver-dim);
+            margin-top: 0.25rem;
+            letter-spacing: 0.01em;
+        }
         .kc-card-sub {
             margin-top: 0.9rem; font-size: 0.78rem;
             color: var(--kc-silver-dim); line-height: 1.55;
@@ -715,7 +726,7 @@ HERO_HTML = f"""
   </p>
   <div class="kc-badges">
     <span class="kc-badge kc-badge--bronze">Bradenton · FL</span>
-    <span class="kc-badge kc-badge--bronze">Tip-off {EVENT_START_TIME}</span>
+    <span class="kc-badge kc-badge--bronze">Bracket starts {EVENT_START_TIME}</span>
     <span class="kc-badge kc-badge--burgundy">Attendance forecast</span>
     <span class="kc-badge kc-badge--silver">Kava Social Chess</span>
     <span class="kc-badge kc-badge--silver">MLflow pipeline</span>
@@ -924,8 +935,9 @@ def _forecast_summary(pred) -> None:
             f"""
             <div class="kc-card kc-card--feature">
               <div class="kc-card-label">Predicted Attendance</div>
-              <div class="kc-card-value kc-card-value--bronze">{pred.predicted_attendance_rounded}<span class="kc-card-unit">players</span></div>
-              <div class="kc-card-sub">Plain estimate of how many players are likely to show up on <b>{pred.event_date}</b> · tip-off <b>{EVENT_START_TIME}</b>.</div>
+              <div class="kc-card-value kc-card-value--bronze">{pred.predicted_attendance_rounded}</div>
+              <div class="kc-card-unit-stacked">expected players</div>
+              <div class="kc-card-sub">Expected turnout for the bracket on <b>{pred.event_date}</b>. Bracket starts at <b>{EVENT_START_TIME}</b>.</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -2991,13 +3003,13 @@ def _tab_model(history: pd.DataFrame, reg, metadata: dict) -> None:
                 f"<b>{sel_label}</b> was selected because it had the lowest holdout error "
                 f"and improved over the simple &lsquo;guess the previous night&rsquo; baseline by "
                 f"about <b>{improvement:.1f} players</b>. It also avoids using any "
-                "same-night activity, so it&apos;s reading only signals you&apos;d know before tip-off."
+                "same-night activity, so it&apos;s reading only signals you&apos;d know before the bracket starts."
             )
         else:
             _takeaway(
                 f"<b>{sel_label}</b> was selected as the best of the four candidates "
                 "on the holdout test set. The forecast uses only signals knowable "
-                "before tip-off &mdash; no same-night leakage."
+                "before the bracket starts &mdash; no same-night leakage."
             )
 
     # ---- feature importance ----
