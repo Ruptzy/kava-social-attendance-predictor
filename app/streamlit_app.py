@@ -781,20 +781,63 @@ def _sidebar(history: pd.DataFrame):
         )
         st.caption("Leave off to use the live Bradenton forecast.")
         custom_weather = st.toggle("Use my own weather", value=False)
-        weather_override = None
+        weather_override: dict | None = None
         if custom_weather:
-            temp_high_f = st.number_input("Expected high (°F)", min_value=30, max_value=110, value=82, step=1)
-            rain_chance = st.slider("Rain chance", 0, 100, 20, 5, format="%d%%")
-            humidity = st.slider("Humidity", 0, 100, 70, 5, format="%d%%")
+            temp_high_f = st.number_input(
+                "Expected high temperature (°F)",
+                min_value=30, max_value=110, value=82, step=1,
+                key="weather_temp_high_f",
+            )
+            humidity_pct = st.slider(
+                "Expected humidity", 0, 100, 70, 5, format="%d%%",
+                key="weather_humidity_pct",
+            )
+            rain_in = st.number_input(
+                "Expected rain amount (inches)",
+                min_value=0.0, max_value=4.0, value=0.0, step=0.05,
+                key="weather_rain_in",
+            )
+            wind_mph = st.slider(
+                "Expected wind (mph)", 0, 40, 8, 1,
+                key="weather_wind_mph",
+            )
+            rough_weather = st.checkbox(
+                "Rough weather expected? (thunderstorm / severe)",
+                value=False,
+                key="weather_rough",
+            )
+            # Convert to model-native units (Celsius, millimetres, km/h).
             temp_c = (temp_high_f - 32) * 5.0 / 9.0
+            rain_mm = float(rain_in) * 25.4
+            wind_kmh = float(wind_mph) * 1.609
+            # Compute the comfort score live from the chosen inputs.
+            score = 0
+            if humidity_pct >= 80: score += 1
+            if temp_high_f >= 88: score += 1
+            if rain_in >= 0.10: score += 1
+            if wind_mph >= 15: score += 1
+            if rough_weather: score += 1
             weather_override = {
                 "temperature_high": temp_c,
                 "average_temperature": temp_c - 3.0,
-                "feels_like_temperature": temp_c + (humidity - 50) / 25.0,
-                "precipitation_amount": rain_chance / 20.0,
-                "rain_indicator": 1 if rain_chance >= 40 else 0,
-                "thunderstorm_indicator": 1 if rain_chance >= 70 else 0,
-                "severe_weather_indicator": 1 if rain_chance >= 85 else 0,
+                "feels_like_temperature": temp_c + (humidity_pct - 50) / 25.0,
+                "temperature_at_8pm": temp_c - 5.0,  # evenings usually cooler than daytime high
+                "event_window_temp_c": temp_c - 5.0,
+                "event_window_humidity": float(humidity_pct),
+                "daily_humidity_max": float(humidity_pct),
+                "precipitation_amount": rain_mm,
+                "event_window_precip_mm": rain_mm,
+                "wind_speed": wind_kmh,
+                "rain_indicator": 1 if rain_in >= 0.02 else 0,
+                "thunderstorm_indicator": 1 if rough_weather else 0,
+                "severe_weather_indicator": 1 if rough_weather else 0,
+                "weather_discomfort_score": float(score),
+                # Echo back the raw imperial inputs for the Weather tab to display
+                "_display_humidity_pct": float(humidity_pct),
+                "_display_temp_f": float(temp_high_f),
+                "_display_rain_in": float(rain_in),
+                "_display_comfort_score": int(score),
+                "_display_source": "Manual override",
             }
 
         st.markdown("---")
@@ -2027,99 +2070,145 @@ def _tab_calendar(history: pd.DataFrame) -> None:
         )
 
 
-def _weather_context_cards(pred) -> None:
-    """Top-of-tab snapshot of the forecast night's weather inputs, summarising
-    what the model is reading for the date currently selected in the sidebar."""
-    f = pred.features_used or {}
+def _weather_context_cards(pred, history: pd.DataFrame, weather_override: dict | None) -> None:
+    """Top-of-tab snapshot of the forecast night's weather. Three sources are
+    consulted in order:
+      1. Manual override (the sidebar toggle is on) - always wins.
+      2. The values inside pred.features_used (filled by the live forecast).
+      3. Historical typical values from the event history - the fallback so
+         the user never sees a blank "Unknown" card.
+    A small state pill makes it clear which source is being shown."""
+    override = weather_override or {}
+    feats = pred.features_used or {}
 
-    def fmt(v, suffix=""):
-        if v is None or pd.isna(v):
-            return "—"
-        return f"{v:.0f}{suffix}"
-
-    # Pick the best available humidity (event-window first, daily-max fallback)
-    hum_label = "Humidity near 8 PM"
-    hum_val = f.get("event_window_humidity")
-    if hum_val is None or pd.isna(hum_val):
-        hum_val = f.get("daily_humidity_max")
-        hum_label = "Daily peak humidity"
-
-    # Pick the best available temperature
-    temp_c = f.get("temperature_at_8pm")
-    temp_label = "Temperature at 8 PM"
-    if temp_c is None or pd.isna(temp_c):
-        temp_c = f.get("event_window_temp_c")
-        temp_label = "Temperature near 8 PM"
-    if temp_c is None or pd.isna(temp_c):
-        temp_c = f.get("temperature_high")
-        temp_label = "Daytime high"
-    temp_f = (temp_c * 9.0 / 5.0 + 32.0) if (temp_c is not None and pd.notna(temp_c)) else None
-
-    rain_mm = f.get("event_window_precip_mm")
-    rain_label = "Rain near 8 PM"
-    if rain_mm is None or pd.isna(rain_mm):
-        rain_mm = f.get("precipitation_amount")
-        rain_label = "Rain that day"
-    rain_in = (rain_mm * 0.03937) if (rain_mm is not None and pd.notna(rain_mm)) else None
-
-    comfort = f.get("weather_discomfort_score")
-    if comfort is None or pd.isna(comfort):
-        comfort_label = "Unknown"
+    # ----- Decide source + collect display values -----
+    if override:
+        source = "Manual override"
+        humidity_pct = override.get("_display_humidity_pct")
+        temp_f = override.get("_display_temp_f")
+        rain_in = override.get("_display_rain_in")
+        comfort_score = override.get("_display_comfort_score")
     else:
-        comfort_int = int(comfort)
-        comfort_label = (
-            "Comfortable" if comfort_int <= 1
-            else ("Moderate" if comfort_int == 2 else "Rough weather")
-        )
+        # Try the live-forecast features first
+        hum_c = feats.get("event_window_humidity") or feats.get("daily_humidity_max")
+        temp_c = (feats.get("temperature_at_8pm")
+                  or feats.get("event_window_temp_c")
+                  or feats.get("temperature_high"))
+        rain_mm = (feats.get("event_window_precip_mm")
+                   or feats.get("precipitation_amount"))
+        comfort_score = feats.get("weather_discomfort_score")
+        humidity_pct = float(hum_c) if pd.notna(hum_c) else None
+        temp_f = (float(temp_c) * 9.0 / 5.0 + 32.0) if pd.notna(temp_c) else None
+        rain_in = (float(rain_mm) * 0.03937) if pd.notna(rain_mm) else None
 
-    rain_disp = "—" if rain_in is None else (
-        "Trace / none" if rain_in < 0.01 else f"{rain_in:.2f} in"
-    )
-    temp_disp = "—" if temp_f is None else f"{temp_f:.0f} °F"
-    hum_disp = "—" if hum_val is None or pd.isna(hum_val) else f"{hum_val:.0f}%"
+        # If the forecast didn't carry weather (far-future date or stub), fall
+        # back to historical typical values so the card is informative.
+        any_real = any(v is not None for v in (humidity_pct, temp_f, rain_in))
+        if not any_real:
+            source = "Historical typical"
+            if "daily_humidity_max" in history.columns and history["daily_humidity_max"].notna().any():
+                humidity_pct = float(history["daily_humidity_max"].median())
+            if "temperature_high" in history.columns and history["temperature_high"].notna().any():
+                temp_f = float(history["temperature_high"].median()) * 9.0 / 5.0 + 32.0
+            if "precipitation_amount" in history.columns and history["precipitation_amount"].notna().any():
+                rain_in = float(history["precipitation_amount"].median()) * 0.03937
+            if comfort_score is None or pd.isna(comfort_score):
+                if "weather_discomfort_score" in history.columns and history["weather_discomfort_score"].notna().any():
+                    comfort_score = float(history["weather_discomfort_score"].median())
+        else:
+            source = "Live forecast"
+
+    # ----- Format the display values, never blank -----
+    def _fmt_pct(v):
+        return "Not available" if v is None or pd.isna(v) else f"{float(v):.0f}%"
+
+    def _fmt_temp(v):
+        return "Not available" if v is None or pd.isna(v) else f"{float(v):.0f} °F"
+
+    def _fmt_rain(v):
+        if v is None or pd.isna(v):
+            return "Not available"
+        v = float(v)
+        return "Trace / none" if v < 0.01 else f"{v:.2f} in"
+
+    if comfort_score is None or pd.isna(comfort_score):
+        comfort_label = "Not enough data"
+        comfort_sub = "Need humidity, temp, rain, wind"
+    else:
+        s = int(round(float(comfort_score)))
+        comfort_label = (
+            "Comfortable" if s <= 1
+            else ("Mixed" if s == 2 else "Rough")
+        )
+        comfort_sub = f"Score {s} of 5"
+
+    # Source badge color
+    source_color = {
+        "Live forecast": "#9DD4B3",       # teal-leaning
+        "Manual override": "#C4A77D",     # bronze-bright
+        "Historical typical": "#9BA09B",  # silver-dim
+    }.get(source, "#9BA09B")
 
     st.markdown(
         f"""
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+          <div style="font-size:0.66rem; text-transform:uppercase; letter-spacing:0.24em; color:var(--kc-bronze); font-weight:600;">Forecast-night weather snapshot</div>
+          <div style="font-size:0.66rem; text-transform:uppercase; letter-spacing:0.18em; color:{source_color}; font-weight:600; padding:0.2rem 0.6rem; border:1px solid {source_color}40; border-radius:999px;">{source}</div>
+        </div>
         <div class="kc-stat-strip">
           <div class="kc-stat-chip">
-            <div class="label">{hum_label}</div>
-            <div class="value">{hum_disp}</div>
+            <div class="label">Humidity</div>
+            <div class="value">{_fmt_pct(humidity_pct)}</div>
             <div class="sub">muggy &ge; 80%</div>
           </div>
           <div class="kc-stat-chip">
-            <div class="label">{temp_label}</div>
-            <div class="value">{temp_disp}</div>
+            <div class="label">Temperature</div>
+            <div class="value">{_fmt_temp(temp_f)}</div>
             <div class="sub">hot &ge; 88 °F</div>
           </div>
           <div class="kc-stat-chip">
-            <div class="label">{rain_label}</div>
-            <div class="value">{rain_disp}</div>
+            <div class="label">Rain amount</div>
+            <div class="value">{_fmt_rain(rain_in)}</div>
             <div class="sub">meaningful &ge; 0.10 in</div>
           </div>
           <div class="kc-stat-chip">
             <div class="label">Weather comfort</div>
             <div class="value value-winner">{comfort_label}</div>
-            <div class="sub">score {fmt(comfort)} of 5</div>
+            <div class="sub">{comfort_sub}</div>
           </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-
-def _tab_weather(history: pd.DataFrame, pred) -> None:
-    _explain(
-        "<b>Florida rain is hard to label cleanly</b> &mdash; afternoon thunderstorms "
-        "come and go fast, so a simple rain yes/no flag is unreliable. KavaCast "
-        "focuses on <b>weather comfort</b> instead: humidity, temperature, and "
-        "meaningful precipitation give a more stable picture of whether the night "
-        "may feel easy or annoying for players to make the trip. The model still "
-        "sees the underlying numbers; the charts below show how attendance has "
-        "moved with each of them."
+    # State-specific helper line under the strip
+    if source == "Manual override":
+        helper = "These values come from the <b>Use my own weather</b> controls in the sidebar."
+    elif source == "Live forecast":
+        helper = "Pulled from the live Bradenton Open-Meteo forecast for the selected date."
+    else:
+        helper = ("Live forecast wasn't available for this date, so the cards "
+                  "show <b>historical typical values</b>. You can override any of "
+                  "them with the <b>Use my own weather</b> toggle in the sidebar.")
+    st.markdown(
+        f'<div style="font-size:0.78rem; color:var(--kc-silver-dim); margin-top:0.4rem;">{helper}</div>',
+        unsafe_allow_html=True,
     )
 
-    # Forecast-night context cards
-    _weather_context_cards(pred)
+
+def _tab_weather(history: pd.DataFrame, pred, weather_override: dict | None = None) -> None:
+    _explain(
+        "<b>Florida rain is hard to label cleanly</b> because storms can be brief "
+        "and local. Instead of relying on a fragile rain yes/no flag, this tab "
+        "focuses on <b>weather comfort</b>: humidity, temperature, and meaningful "
+        "precipitation. These features help the model adjust for whether a night "
+        "may feel easy or annoying for players to attend.<br><br>"
+        f"Bracket nights begin at <b>{EVENT_START_TIME}</b>. When event-time hourly "
+        "weather is not available, the app uses daily Bradenton weather as an "
+        "approximation."
+    )
+
+    # Forecast-night context cards (live / manual override / historical typical)
+    _weather_context_cards(pred, history, weather_override)
     st.write("")  # spacer
 
     humidity_fig = _humidity_vs_attendance_chart(history)
@@ -3053,8 +3142,13 @@ def main() -> None:
         except Exception:
             pass
 
+    # Strip the display-only keys (prefixed `_display_`) from the override
+    # before handing it to the model - they're for the Weather tab cards only.
+    model_override = None
+    if weather_override:
+        model_override = {k: v for k, v in weather_override.items() if not k.startswith("_display_")}
     try:
-        pred = predict_for_date(target_date, weather_override=weather_override)
+        pred = predict_for_date(target_date, weather_override=model_override)
     except TypeError:
         # Older predict.py without the weather_override kwarg
         pred = predict_for_date(target_date)
@@ -3116,7 +3210,7 @@ def main() -> None:
     with tab_cal:
         _tab_calendar(history)
     with tab_wx:
-        _tab_weather(history, pred)
+        _tab_weather(history, pred, weather_override)
     with tab_com:
         _tab_community(history)
     with tab_val:
