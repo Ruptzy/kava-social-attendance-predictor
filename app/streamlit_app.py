@@ -444,6 +444,42 @@ def _inject_css() -> None:
         }
         div[data-testid="stExpander"] svg { fill: var(--kc-bronze) !important; }
 
+        /* CHART TAKEAWAY - a small polished insight card placed under each
+           chart so the user always gets a "so what?" without having to
+           interpret the graph themselves. Subtle, never visually loud. */
+        .kc-takeaway {
+            position: relative;
+            background: rgba(22, 48, 43, 0.62);
+            border: 1px solid var(--kc-border);
+            border-radius: 10px;
+            padding: 0.7rem 1rem 0.78rem;
+            margin: -0.25rem 0 1.05rem;
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+        .kc-takeaway::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 1.1rem; right: 1.1rem;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(163, 133, 96, 0.55), transparent);
+        }
+        .kc-takeaway-label {
+            text-transform: uppercase;
+            letter-spacing: 0.24em;
+            font-size: 0.62rem;
+            font-weight: 600;
+            color: var(--kc-bronze);
+            margin-bottom: 0.32rem;
+        }
+        .kc-takeaway-body {
+            font-size: 0.88rem;
+            line-height: 1.55;
+            color: var(--kc-silver);
+        }
+        .kc-takeaway-body b { color: var(--kc-bronze-bright); font-weight: 600; }
+        .kc-takeaway-body i { color: var(--kc-silver-dim); font-style: normal; }
+
         /* TRUST NOTE */
         .kc-trust {
             margin-top: 0.85rem; padding: 0.8rem 1rem; border-radius: 10px;
@@ -677,6 +713,20 @@ def _section_header(eyebrow: str, title: str) -> None:
 
 def _explain(html: str) -> None:
     st.markdown(f'<div class="kc-explain">{html}</div>', unsafe_allow_html=True)
+
+
+def _takeaway(body: str, label: str = "Takeaway") -> None:
+    """Polished insight card under a chart. Bronze top accent, small uppercase
+    label, plain-English body. One per chart so the dashboard reads
+    consistently and every visual has a 'so what?' line."""
+    safe = body.replace("\n", " ").strip()
+    st.markdown(
+        f'<div class="kc-takeaway">'
+        f'<div class="kc-takeaway-label">{label}</div>'
+        f'<div class="kc-takeaway-body">{safe}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _chart_panel(eyebrow: str, fig: go.Figure, caption: str | None = None, key: str | None = None) -> None:
@@ -1727,6 +1777,43 @@ def _tab_summary(history: pd.DataFrame, pred) -> None:
         "Forecast nights tend to land close to where the last-5-event average is "
         "trending, adjusted for weather and time-of-year.",
     )
+    # Dynamic takeaway: compare the forecast to the recent baseline.
+    try:
+        last5 = float(history["attendance_count"].tail(5).mean())
+        last10 = float(history["attendance_count"].tail(10).mean())
+        fc = float(pred.predicted_attendance_rounded)
+        diff = fc - last5
+        # Direction of the rolling baseline
+        if last5 - last10 > 0.8:
+            trend_phrase = "the recent baseline is trending up"
+        elif last10 - last5 > 0.8:
+            trend_phrase = "the recent baseline is trending down"
+        else:
+            trend_phrase = "the recent baseline has been stable"
+        if abs(diff) <= 1.0:
+            msg = (
+                f"The forecast of <b>{int(fc)} players</b> is right on the last-5-event "
+                f"average of <b>{last5:.1f}</b>, and {trend_phrase}. The model is "
+                "expecting a typical bracket night rather than a spike or a drop."
+            )
+        elif diff > 1.0:
+            msg = (
+                f"The forecast of <b>{int(fc)} players</b> is about <b>{abs(diff):.0f} "
+                f"above</b> the last-5-event average of {last5:.1f}, and {trend_phrase}. "
+                "The model is leaning toward a busier-than-usual night."
+            )
+        else:
+            msg = (
+                f"The forecast of <b>{int(fc)} players</b> is about <b>{abs(diff):.0f} "
+                f"below</b> the last-5-event average of {last5:.1f}, and {trend_phrase}. "
+                "The model is leaning toward a lighter night."
+            )
+        _takeaway(msg)
+    except Exception:
+        _takeaway(
+            "Forecast nights usually land close to the recent average. Rolling "
+            "averages matter here because they smooth out one-off spikes and drops."
+        )
 
 
 def _tab_attendance_momentum(history: pd.DataFrame, pred) -> None:
@@ -1740,6 +1827,27 @@ def _tab_attendance_momentum(history: pd.DataFrame, pred) -> None:
         _trend_chart(history, pred),
         "Bronze dotted line = last-3-event average. Bronze solid line = last-5-event average.",
     )
+    # Takeaway: stability of the recent baseline
+    try:
+        std3 = float(history["attendance_count"].tail(5).std())
+        if std3 <= 2.5:
+            stability = "the recent baseline has been steady"
+        elif std3 <= 4.5:
+            stability = "the recent baseline has shifted moderately"
+        else:
+            stability = "the recent baseline has been bouncy"
+        _takeaway(
+            f"Over the last 5 events {stability} (typical swing &asymp; "
+            f"<b>{std3:.1f} players</b>). Because attendance tends to carry "
+            "momentum from one event to the next, this rolling baseline is one "
+            "of the model's strongest signals."
+        )
+    except Exception:
+        _takeaway(
+            "Attendance tends to carry momentum from one event to the next, "
+            "which is why rolling averages are one of the model's strongest signals."
+        )
+
     prev_fig = _prev_vs_next_chart(history)
     if prev_fig is not None:
         _chart_panel(
@@ -1748,6 +1856,26 @@ def _tab_attendance_momentum(history: pd.DataFrame, pred) -> None:
             "Dots above the dashed line are nights that grew from the one before. "
             "Below it, nights that dropped.",
         )
+        # Takeaway: fraction of nights within ±X of the previous one
+        try:
+            h = history.dropna(subset=["previous_event_attendance"]).copy()
+            diff = (h["attendance_count"] - h["previous_event_attendance"]).abs()
+            within_3 = float((diff <= 3).mean()) if len(h) else 0.0
+            grew = float((h["attendance_count"] > h["previous_event_attendance"]).mean()) if len(h) else 0.0
+            _takeaway(
+                f"About <b>{within_3 * 100:.0f}%</b> of bracket nights landed within "
+                "&plusmn;3 players of the night before, and roughly half of nights "
+                f"grew vs. half dropped ({grew * 100:.0f}% grew). Many points sit "
+                "near the dashed reference line &mdash; attendance often stays close "
+                "to the previous event, which is why last-event attendance is such "
+                "an important baseline."
+            )
+        except Exception:
+            _takeaway(
+                "Many points sit near the dashed reference line, meaning attendance "
+                "often stays close to the previous event. This is why last-event "
+                "attendance is an important baseline for the model."
+            )
 
 
 def _tab_calendar(history: pd.DataFrame) -> None:
@@ -1761,6 +1889,28 @@ def _tab_calendar(history: pd.DataFrame) -> None:
         _chart_panel("Average attendance by month and year", _monthly_heatmap(history))
     with col_b:
         _chart_panel("Average attendance by month", _avg_by_month_chart(history))
+
+    # Shared month/season takeaway computed from the data.
+    try:
+        h_cal = history.copy()
+        h_cal["month"] = h_cal["event_date"].dt.month
+        monthly_avg = h_cal.groupby("month")["attendance_count"].mean()
+        month_names = ["January", "February", "March", "April", "May", "June",
+                       "July", "August", "September", "October", "November", "December"]
+        top_m = month_names[int(monthly_avg.idxmax()) - 1]
+        low_m = month_names[int(monthly_avg.idxmin()) - 1]
+        overall = float(h_cal["attendance_count"].mean())
+        _takeaway(
+            f"Attendance has historically been strongest around <b>{top_m}</b> and "
+            f"softer around <b>{low_m}</b>, with an all-time average of "
+            f"<b>{overall:.1f} players</b>. The model uses month and season to nudge "
+            "the forecast for time-of-year patterns."
+        )
+    except Exception:
+        _takeaway(
+            "Some months and seasons are historically stronger than others. The "
+            "model uses month and season to adjust the forecast for time-of-year patterns."
+        )
 
     h = history.copy()
     h["month"] = h["event_date"].dt.month
@@ -1788,6 +1938,34 @@ def _tab_calendar(history: pd.DataFrame) -> None:
             gap_fig,
             "Nights after very long gaps (30+ days) often run lighter as the regulars get out of rhythm.",
         )
+        try:
+            h_gap = history.dropna(subset=["days_since_last_event"]).copy()
+            cadence_share = float((h_gap["days_since_last_event"] <= 16).mean()) if len(h_gap) else 0.0
+            long_gap = h_gap[h_gap["days_since_last_event"] >= 30]
+            normal = h_gap[h_gap["days_since_last_event"] <= 16]
+            if len(long_gap) >= 2 and len(normal) >= 2:
+                long_avg = float(long_gap["attendance_count"].mean())
+                norm_avg = float(normal["attendance_count"].mean())
+                diff_phrase = (
+                    f"On average, nights after a long gap of 30+ days drew "
+                    f"<b>{long_avg:.1f} players</b> &mdash; about "
+                    f"<b>{abs(long_avg - norm_avg):.1f} {'fewer' if long_avg < norm_avg else 'more'}</b> "
+                    f"than typical-cadence nights ({norm_avg:.1f})."
+                )
+            else:
+                diff_phrase = "There aren't enough long-gap events yet to draw a firm contrast."
+            _takeaway(
+                f"About <b>{cadence_share * 100:.0f}%</b> of bracket nights follow "
+                "the normal two-week cadence. " + diff_phrase + " The model uses "
+                "<i>days since last event</i> so long breaks don't get treated as "
+                "regular nights."
+            )
+        except Exception:
+            _takeaway(
+                "Nights after very long gaps often run lighter because regular "
+                "players fall out of rhythm. The model uses 'days since last event' "
+                "to handle this."
+            )
 
     holiday_fig = _holiday_compare_chart(history)
     if holiday_fig is not None:
@@ -1972,6 +2150,41 @@ def _tab_weather(history: pd.DataFrame, pred) -> None:
         if temp_fig is not None:
             _chart_panel(temp_title, temp_fig, temp_caption)
 
+    # Humidity takeaway (data-driven, non-causal)
+    if humidity_fig is not None:
+        try:
+            hum_col = ("event_window_humidity"
+                       if "event_window_humidity" in history.columns
+                       and history["event_window_humidity"].notna().any()
+                       else "daily_humidity_max")
+            h_wx = history.dropna(subset=[hum_col]).copy()
+            corr = float(h_wx[hum_col].corr(h_wx["attendance_count"])) if len(h_wx) >= 3 else 0.0
+            if abs(corr) < 0.18:
+                msg = (
+                    "Higher humidity does not appear to create a clear attendance "
+                    "drop or boost &mdash; muggy nights and dry nights look similar overall. "
+                    "Humidity is useful context for the model but not the main driver."
+                )
+            elif corr < 0:
+                msg = (
+                    f"Muggier nights tend to run <i>slightly</i> lighter "
+                    f"(correlation about {corr:+.2f}), but the pattern is modest. "
+                    "Treat humidity as supporting context, not a hard rule."
+                )
+            else:
+                msg = (
+                    f"Muggier nights tend to run <i>slightly</i> busier "
+                    f"(correlation about {corr:+.2f}), but the pattern is modest. "
+                    "Treat humidity as supporting context, not a hard rule."
+                )
+            _takeaway(msg)
+        except Exception:
+            _takeaway(
+                "Humidity is useful context for the model but does not by itself "
+                "explain attendance. Weather helps fine-tune the forecast rather "
+                "than determine it."
+            )
+
     # Plain-language takeaway for the temperature chart - placed full-width
     # under the row so it reads even when the chart is in a column.
     if temp_fig is not None:
@@ -1998,6 +2211,30 @@ def _tab_weather(history: pd.DataFrame, pred) -> None:
             "rain ≥ 0.10 in, wind ≥ 15 mph, thunderstorm). 0–1 = comfortable, 2 = moderate, "
             "3 or more = rough weather.",
         )
+        try:
+            h_c = history.dropna(subset=["weather_discomfort_score"]).copy()
+            score = h_c["weather_discomfort_score"].astype(int)
+            comfortable = h_c[score <= 1]["attendance_count"]
+            moderate = h_c[score == 2]["attendance_count"]
+            rough = h_c[score >= 3]["attendance_count"]
+            parts = []
+            if len(comfortable):
+                parts.append(f"Comfortable nights: <b>{comfortable.median():.0f}</b> typical players")
+            if len(moderate):
+                parts.append(f"Moderate: <b>{moderate.median():.0f}</b>")
+            if len(rough):
+                parts.append(f"Rough weather: <b>{rough.median():.0f}</b>")
+            stem = " &middot; ".join(parts)
+            _takeaway(
+                f"{stem}. Comfort and moderate buckets look similar, while rough-weather "
+                "nights show more spread. Weather helps the model adjust expectations "
+                "for physical turnout &mdash; it doesn't decide the forecast on its own."
+            )
+        except Exception:
+            _takeaway(
+                "Weather does not fully explain attendance, but uncomfortable conditions "
+                "help the model adjust expectations for physical turnout."
+            )
 
     if humidity_fig is None and temp_fig is None and comfort_fig is None:
         st.info(
@@ -2036,11 +2273,47 @@ def _tab_community(history: pd.DataFrame) -> None:
             players_fig,
             "Stacked area &mdash; the gold band is returning regulars, the dark-red band is players new to the club that night.",
         )
+        try:
+            tot_ret = float(history["returning_players_count"].sum())
+            tot_new = float(history["new_players_count"].sum())
+            ret_share = tot_ret / max(tot_ret + tot_new, 1.0)
+            recent_new = float(history["new_players_count"].tail(5).mean())
+            _takeaway(
+                f"Returning regulars account for about <b>{ret_share * 100:.0f}%</b> "
+                "of seats overall &mdash; club rhythm matters more than one-off spikes. "
+                f"The last 5 events averaged <b>{recent_new:.1f} new players</b> per "
+                "night, which is the slow-burn growth signal the model also watches."
+            )
+        except Exception:
+            _takeaway(
+                "Returning players are the strongest sign of club rhythm; new players "
+                "show growth. The model uses prior-event counts of each to gauge "
+                "momentum without ever peeking at the night it's predicting."
+            )
     col_a, col_b = st.columns([1.4, 1])
     with col_a:
         gpp_fig = _games_per_player_chart(history)
         if gpp_fig is not None:
             _chart_panel("Games per player over time", gpp_fig)
+            try:
+                avg_gpp = float(history["games_per_player"].mean())
+                rec_gpp = float(history["games_per_player"].tail(5).mean())
+                diff_gpp = rec_gpp - avg_gpp
+                tempo_word = (
+                    "running near the all-time tempo" if abs(diff_gpp) < 0.15
+                    else ("running a touch faster" if diff_gpp > 0 else "running a touch slower")
+                )
+                _takeaway(
+                    f"All-time tempo is around <b>{avg_gpp:.1f} games per player</b>. "
+                    f"The last 5 nights have been {tempo_word} "
+                    f"(<b>{rec_gpp:.1f}</b>), suggesting consistent club tempo. "
+                    "This is a club-health signal, not a direct attendance predictor."
+                )
+            except Exception:
+                _takeaway(
+                    "Games-per-player tracks how engaged players are once they show up. "
+                    "It's a community-health signal, not a direct attendance predictor."
+                )
         else:
             st.info("Games-per-player history is not available in the current data.")
     with col_b:
@@ -2150,6 +2423,21 @@ def _tab_model(history: pd.DataFrame, reg, metadata: dict) -> None:
             f'</div>',
             unsafe_allow_html=True,
         )
+        # Bake-off takeaway
+        improvement = naive_mae - holdout_mae if not (pd.isna(naive_mae) or pd.isna(holdout_mae)) else None
+        if improvement is not None and improvement > 0:
+            _takeaway(
+                f"<b>{sel_label}</b> was selected because it had the lowest holdout error "
+                f"and improved over the simple &lsquo;guess the previous night&rsquo; baseline by "
+                f"about <b>{improvement:.1f} players</b>. It also avoids using any "
+                "same-night activity, so it&apos;s reading only signals you&apos;d know before tip-off."
+            )
+        else:
+            _takeaway(
+                f"<b>{sel_label}</b> was selected as the best of the four candidates "
+                "on the holdout test set. The forecast uses only signals knowable "
+                "before tip-off &mdash; no same-night leakage."
+            )
 
     # ---- feature importance ----
     family_map = metadata.get("feature_family", {})
