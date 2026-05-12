@@ -2780,6 +2780,9 @@ def _tab_venue_value(history: pd.DataFrame, pred) -> None:
         "current settings &mdash; before counting friends, spectators, food, "
         "or merch."
     )
+
+
+def _tab_model(history: pd.DataFrame, reg, metadata: dict) -> None:
     # ---- headline metrics in plain language ----
     n = metadata.get("n_training_events", 0)
     sel_label = metadata.get("selected_model_label", "Random Forest")
