@@ -611,8 +611,28 @@ def _inject_css() -> None:
 # ----------------------------------------------------------------------------
 # Caching
 # ----------------------------------------------------------------------------
+def _data_version() -> str:
+    """Return a string that changes whenever event_history.parquet (or
+    metadata.json) is touched on disk. Used as the @st.cache_resource key
+    below so a Streamlit Cloud redeploy that updates the artifacts on disk
+    also invalidates the cache, even if the Python process happens to be
+    reused. Without this, _load_artifacts could pin a stale DataFrame in
+    memory across deploys and the charts would silently lag the data."""
+    parts = []
+    for rel in ("models/event_history.parquet", "models/metadata.json"):
+        p = PROJECT_ROOT / rel
+        if p.exists():
+            s = p.stat()
+            parts.append(f"{rel}:{s.st_size}-{int(s.st_mtime)}")
+        else:
+            parts.append(f"{rel}:missing")
+    return "|".join(parts)
+
+
 @st.cache_resource
-def _load_artifacts():
+def _load_artifacts(_version: str = "default"):
+    # _version is unused inside the function body - it exists only to make
+    # the cache key change when the on-disk artifacts change.
     reg, clf, history, metadata = load_models()
     history = history.copy()
     history["event_date"] = pd.to_datetime(history["event_date"])
@@ -3122,6 +3142,99 @@ def _render_how_it_works() -> None:
     )
 
 
+def _render_data_inventory(history: pd.DataFrame, metadata: dict) -> None:
+    """Visible sanity check so the user can always confirm what the app
+    is actually loading. Lives in a Reference expander at the bottom of the
+    page. Pulls counts directly from the DataFrame the chart functions are
+    reading - if a date is in this expander, it's in the charts."""
+    h = history.copy()
+    h["event_date"] = pd.to_datetime(h["event_date"])
+
+    by_source = (
+        h["source_type"].value_counts().to_dict()
+        if "source_type" in h.columns else {"unknown": len(h)}
+    )
+    total = len(h)
+    first = h["event_date"].min()
+    latest = h["event_date"].max()
+    avg = float(h["attendance_count"].mean())
+    med = float(h["attendance_count"].median())
+
+    cards = [
+        ("Total events tracked", f"{total}", "across the whole history"),
+        ("First event date", f"{first:%b %d, %Y}", "earliest tracked night"),
+        ("Latest event date", f"{latest:%b %d, %Y}", "most recent tracked night"),
+        ("Average attendance", f"{avg:.1f}", "players per bracket night"),
+        ("Median attendance", f"{med:.0f}", "high-turnout threshold"),
+    ]
+    chips_html = "".join(
+        f'<div class="kc-stat-chip"><div class="label">{lab}</div>'
+        f'<div class="value">{val}</div><div class="sub">{sub}</div></div>'
+        for lab, val, sub in cards
+    )
+    st.markdown(
+        f'<div class="kc-stat-strip" style="grid-template-columns: repeat(5, 1fr);">{chips_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Source-type breakdown
+    src_lines = "".join(
+        f"<li><b>{src}</b>: {n} event{'s' if n != 1 else ''}</li>"
+        for src, n in by_source.items()
+    )
+    st.markdown(
+        f"""
+        <div class="kc-notes-card" style="margin-top:0.6rem;">
+          <h5>How the events were tracked</h5>
+          <ul style="margin:0; padding-left:1.1rem; color:var(--kc-silver);">{src_lines}</ul>
+          <p style="margin:0.5rem 0 0; color:var(--kc-silver-dim); font-size:0.85rem;">
+            game_logs = events reconstructed from one row per chess game.
+            standings_summary = events recovered from Swiss-standings / pairing
+            paste-ins. Game-logs counts always win when a date has both.
+          </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Standings-summary detail table (the recovered dates the user asked about)
+    if "source_type" in h.columns:
+        ss = h[h["source_type"] == "standings_summary"][["event_date", "attendance_count"]].copy()
+        if not ss.empty:
+            ss["event_date"] = ss["event_date"].dt.strftime("%b %d, %Y")
+            ss = ss.sort_values("event_date")
+            rows = "".join(
+                f"<tr><td>{r['event_date']}</td><td style='text-align:right;color:var(--kc-bronze-bright);'>{int(r['attendance_count'])}</td></tr>"
+                for _, r in ss.iterrows()
+            )
+            st.markdown(
+                f"""
+                <div style="margin-top:0.6rem; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.22em; color:var(--kc-bronze); font-weight:600;">Recovered events (standings_summary)</div>
+                <table style="width:100%; margin-top:0.4rem; border-collapse:collapse; font-size:0.88rem;">
+                  <thead>
+                    <tr style="color:var(--kc-silver-dim); text-align:left; border-bottom:1px solid var(--kc-border);">
+                      <th style="padding:0.35rem 0; font-weight:500;">Event date</th>
+                      <th style="padding:0.35rem 0; text-align:right; font-weight:500;">Attendance</th>
+                    </tr>
+                  </thead>
+                  <tbody>{rows}</tbody>
+                </table>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    # Metadata sanity line
+    trained = metadata.get("trained_at", "—") if isinstance(metadata, dict) else "—"
+    sel = metadata.get("selected_model_label", "—") if isinstance(metadata, dict) else "—"
+    st.markdown(
+        f'<div style="margin-top:0.7rem; font-size:0.78rem; color:var(--kc-silver-dim);">'
+        f'<b>Selected model:</b> {sel} &middot; <b>Trained at:</b> {trained} &middot; '
+        f'<b>Loaded from:</b> <code>models/event_history.parquet</code>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
 # ----------------------------------------------------------------------------
 # MAIN
 # ----------------------------------------------------------------------------
@@ -3135,7 +3248,7 @@ def main() -> None:
     st.markdown('<div id="kc-bg" aria-hidden="true"></div>', unsafe_allow_html=True)
 
     try:
-        reg, clf, history, metadata = _load_artifacts()
+        reg, clf, history, metadata = _load_artifacts(_data_version())
     except FileNotFoundError as e:
         st.error(
             "Model artifacts not found. Run the local pipeline first:\n\n"
@@ -3241,6 +3354,8 @@ def main() -> None:
         _render_pipeline_overview()
     with st.expander("How the forecast works, step by step"):
         _render_how_it_works()
+    with st.expander("Data inventory (what the app is reading right now)"):
+        _render_data_inventory(history, metadata)
 
 
 if __name__ == "__main__":
