@@ -2872,6 +2872,24 @@ def _tab_venue_value(history: pd.DataFrame, pred) -> None:
 
 
 def _tab_model(history: pd.DataFrame, reg, metadata: dict) -> None:
+    # ---- data-recovery note (top of tab) ----
+    try:
+        n_supp = int((history.get("source_type", pd.Series(dtype=str)) == "standings_summary").sum()) if "source_type" in history.columns else 0
+    except Exception:
+        n_supp = 0
+    if n_supp:
+        st.markdown(
+            f'<div class="kc-trust" style="margin-bottom:0.5rem;">'
+            f'<b>Data note.</b> {n_supp} early-2025 dates were recovered from Swiss '
+            'standings summaries rather than full game logs. These records are '
+            'used for attendance counts (and player lists for the new/returning '
+            'split), <i>not</i> for any chess-outcome prediction. They carry a '
+            '<code>source_type = "standings_summary"</code> tag in the gold table '
+            'so the lineage is preserved.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
     # ---- headline metrics in plain language ----
     n = metadata.get("n_training_events", 0)
     sel_label = metadata.get("selected_model_label", "Random Forest")

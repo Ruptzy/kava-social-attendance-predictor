@@ -402,6 +402,8 @@ def main() -> None:
         "event_date", "attendance_count", "num_games", "num_draws",
         "unique_players", "new_players_count", "returning_players_count",
         "games_per_player", "draw_rate", "high_turnout",
+        # Lineage: "game_logs" vs "standings_summary"
+        "source_type", "source_note",
         "days_since_last_event", "is_holiday_week", "is_school_break",
         "previous_event_attendance", "previous_event_unique_players",
         "previous_event_new_players_count", "previous_event_returning_players_count",

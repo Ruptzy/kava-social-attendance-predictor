@@ -41,8 +41,61 @@ def _season(month: int) -> str:
     return "fall"
 
 
+STANDINGS_SUPPLEMENT_PATH = PROJECT_ROOT / "data" / "raw" / "standings_supplement.csv"
+
+# Reuse the same name-merge rules the silver cleaner uses so player names
+# from standings paste-ins line up with player names from the game logs.
+_SUPPLEMENT_NAME_MERGES = {
+    "harold": "Gonzalez, Harold",
+    "gonzalez, harold": "Gonzalez, Harold",
+    "cruz, omar": "Cruz, Omar",
+}
+
+
+def _normalize_supplement_name(raw: str) -> str | None:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or s.lower() == "null":
+        return None
+    key = s.lower()
+    if key in _SUPPLEMENT_NAME_MERGES:
+        return _SUPPLEMENT_NAME_MERGES[key]
+    return s
+
+
+def _load_standings_supplement() -> pd.DataFrame:
+    """Read the manually-pasted Swiss-standings supplement.
+
+    The supplement records dates where we only have a player list + total
+    attendance (no game-by-game logs). It is merged into the event-level
+    table after the silver-game aggregation - it is NEVER injected into
+    the silver game-level pipeline. The columns it produces in the gold
+    table are: attendance_count + the player set (for new/returning
+    accounting); fields like num_games / draw_rate / games_per_player
+    are intentionally NaN because we genuinely don't know them.
+
+    Each row carries `source_type = "standings_summary"` so downstream
+    consumers can tell where each row came from.
+    """
+    if not STANDINGS_SUPPLEMENT_PATH.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(STANDINGS_SUPPLEMENT_PATH)
+    if df.empty:
+        return df
+    df["event_date"] = pd.to_datetime(df["event_date"]).dt.normalize()
+    df["players_list"] = df["players"].fillna("").apply(
+        lambda s: {n for n in (_normalize_supplement_name(p) for p in str(s).split(",")) if n}
+    )
+    df["source_type"] = "standings_summary"
+    df["source_note"] = df.get("source_note", "")
+    df["attendance_count"] = df["attendance_count"].astype(int)
+    return df[["event_date", "attendance_count", "players_list", "source_type", "source_note"]]
+
+
 def build_event_table(games: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate game-level rows to one row per event_date."""
+    """Aggregate game-level rows to one row per event_date, then merge in
+    the standings supplement for dates that the game logs don't cover."""
     g = games.copy()
     g["event_date"] = pd.to_datetime(g["event_date"]).dt.normalize()
 
@@ -69,10 +122,43 @@ def build_event_table(games: pd.DataFrame) -> pd.DataFrame:
                 "games_per_player": games_per_player,
                 "draw_rate": draw_rate,
                 "_attendees": attendees,
+                "source_type": "game_logs",
+                "source_note": "",
             }
         )
 
     ev = pd.DataFrame(rows).sort_values("event_date").reset_index(drop=True)
+
+    # Merge in standings-summary dates that are NOT already covered by the
+    # game logs. Existing game-logs dates always win - we never overwrite a
+    # real game-level count with a standings count.
+    sup = _load_standings_supplement()
+    if not sup.empty:
+        existing = set(ev["event_date"].dt.normalize())
+        added = 0
+        for _, srow in sup.iterrows():
+            if srow["event_date"] in existing:
+                continue
+            ev = pd.concat([ev, pd.DataFrame([{
+                "event_date": srow["event_date"],
+                "attendance_count": int(srow["attendance_count"]),
+                # We don't know game counts from a standings paste-in.
+                # Leave NaN so downstream median-fill handles them honestly.
+                "num_games": np.nan,
+                "num_draws": np.nan,
+                "unique_players": int(srow["attendance_count"]),
+                "games_per_player": np.nan,
+                "draw_rate": np.nan,
+                "_attendees": set(srow["players_list"]),
+                "source_type": "standings_summary",
+                "source_note": str(srow["source_note"]),
+            }])], ignore_index=True)
+            added += 1
+        if added:
+            print(f"[gold] merged {added} standings-summary event(s) "
+                  "(date(s) absent from the game-level logs)")
+        ev = ev.sort_values("event_date").reset_index(drop=True)
+
     return ev
 
 
